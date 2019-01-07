@@ -1,0 +1,307 @@
+---
+title: "Analysis of mutations in GZL exomes"
+author: "Stacy Hung"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+## ###############################################################################################
+## Analysis - what is the rate of tumor contamination in ME LMD normal samples?
+## ###############################################################################################
+
+For all T vs. const mutations, what is the VAF in the corresponding ME sample?
+
+```{r}
+library(plyr) # for revalue function
+library(hashmap) # for hashmap function
+
+# read in variant calls for tumor vs. const
+calls.t_v_const <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/validation/analysis/snvs.T_vs_const.intersect.txt", sep = "\t", header = TRUE, fill = TRUE)
+
+# read in variant calls for tumor vs. ME (dataset to extract FROM)
+# NB: these are coming from varScan ONLY, where somatic p-value is set to 1 and min read depth 1 (min AF is 1%)
+calls.t_v_ME <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/validation/varScan.paired.pvalue_1/varScan.all.paired-snps_and_indels.txt", sep = "\t", header = TRUE, fill = TRUE)
+
+# now fill in allele_freq for each variant detected in t vs. const (if there is a snp with at least 1 variant read)
+# key: tumor_id, "chr", "pos", "ref", "alt"
+calls.t_v_const$key <- as.character(paste(
+  calls.t_v_const$tumor_id,
+  calls.t_v_const$chr,
+  calls.t_v_const$pos,
+  calls.t_v_const$ref,
+  calls.t_v_const$alt,
+  sep = "."
+))
+
+calls.t_v_ME$key <- as.character(paste(
+  calls.t_v_ME$tumor_id,
+  calls.t_v_ME$chr,
+  calls.t_v_ME$pos,
+  calls.t_v_ME$ref,
+  calls.t_v_ME$alt,
+  sep = "."
+))
+
+hash.calls.t_v_me.af_tumor <- hashmap(as.character(calls.t_v_ME$key), as.numeric(calls.t_v_ME$allele_freq_tumor))
+hash.calls.t_v_me.af_norm <- hashmap(as.character(calls.t_v_ME$key), as.numeric(calls.t_v_ME$allele_freq_normal))
+hash.calls.t_v_me.var_reads_t <- hashmap(as.character(calls.t_v_ME$key), as.numeric(calls.t_v_ME$var_reads_tumor))
+hash.calls.t_v_me.var_reads_n <- hashmap(as.character(calls.t_v_ME$key), as.numeric(calls.t_v_ME$var_reads_normal))
+hash.calls.t_v_me.pvalue <- hashmap(as.character(calls.t_v_ME$key), as.numeric(calls.t_v_ME$somatic_p_value))
+
+calls.t_v_const$t_v_ME.allele_freq_t <- 0
+calls.t_v_const$t_v_ME.allele_freq_n <- 0
+calls.t_v_const$t_v_ME.var_reads_t <- 0
+calls.t_v_const$t_v_ME.var_reads_n <- 0
+calls.t_v_const$t_v_ME.pvalue <- 0
+
+# now apply the hashmap mappings to fill in the VAFs for the tumor vs. const dataset
+for (i in 1:nrow(calls.t_v_const)){
+  calls.t_v_const[i, ]$t_v_ME.allele_freq_t <- hash.calls.t_v_me.af_tumor[[calls.t_v_const[i, ]$key]]
+  calls.t_v_const[i, ]$t_v_ME.allele_freq_n <- hash.calls.t_v_me.af_norm[[calls.t_v_const[i, ]$key]]
+  calls.t_v_const[i, ]$t_v_ME.var_reads_t <- hash.calls.t_v_me.var_reads_t[[calls.t_v_const[i, ]$key]]
+  calls.t_v_const[i, ]$t_v_ME.var_reads_n <- hash.calls.t_v_me.var_reads_n[[calls.t_v_const[i, ]$key]]
+  calls.t_v_const[i, ]$t_v_ME.pvalue <- hash.calls.t_v_me.pvalue[[calls.t_v_const[i, ]$key]]
+}
+
+write.table(calls.t_v_const, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/validation/snvs_and_indels.T_vs_const.intersect-with_T_v_ME_fields.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+```
+
+## Plot average coverage of the trio samples used for validation analysis
+
+```{r}
+library(ggplot2)
+
+coverage.data <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/validation/data/trios-sample_summary.txt", sep = "\t", header = TRUE)
+
+ggplot(data = coverage.data, aes(x = patient, y = avg_coverage, fill = extraction)) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.62), width = 0.6) +
+  ylab("Average coverage") + xlab("")
+
+```
+
+## Examine distribution of each factor retreived from the T vs. ME dataset
+
+```{r}
+library(ggplot2)
+
+calls.t_v_const <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/validation/analysis/snvs_and_indels.T_vs_const.intersect-with_T_v_ME_fields.txt", sep = "\t", header = TRUE)
+
+# what is distribution of variant allele frequency (in the tumor) when using constitutional DNA vs ME as normal?
+# hint: they are the same!
+t_v_const.allele_freq_tumor <- as.data.frame(calls.t_v_const$allele_freq_tumor)
+colnames(t_v_const.allele_freq_tumor) <- c("allele_freq_tumor")
+t_v_const.allele_freq_tumor$normal <- "constitional DNA"
+
+t_v_ME.allele_freq_tumor <- as.data.frame(calls.t_v_const$t_v_ME.allele_freq_t)
+colnames(t_v_ME.allele_freq_tumor) <- c("allele_freq_tumor")
+t_v_ME.allele_freq_tumor$normal <- "microenvironment"
+
+calls.combined <- rbind(t_v_const.allele_freq_tumor, t_v_ME.allele_freq_tumor)
+
+p.AF_tumor <- ggplot(calls.combined, aes(x = allele_freq_tumor, color = normal)) +
+  geom_density()
+
+# what about the variant AF in the normal when using constitutional DNA vs. ME as normal?
+t_v_const.allele_freq_normal <- as.data.frame(calls.t_v_const$allele_freq_normal)
+colnames(t_v_const.allele_freq_normal) <- c("allele_freq_normal")
+t_v_const.allele_freq_normal$normal <- "constitional DNA"
+
+t_v_ME.allele_freq_normal <- as.data.frame(calls.t_v_const$t_v_ME.allele_freq_n)
+colnames(t_v_ME.allele_freq_normal) <- c("allele_freq_normal")
+t_v_ME.allele_freq_normal$normal <- "microenvironment"
+
+calls.combined <- rbind(t_v_const.allele_freq_normal, t_v_ME.allele_freq_normal)
+
+p.AF_normal <- ggplot(calls.combined, aes(x = allele_freq_normal, color = normal)) +
+  geom_density()
+
+# plot histogram of allele frequency for t vs. ME
+hist.AF_normal <- ggplot(t_v_ME.allele_freq_normal, aes(allele_freq_normal)) +
+  geom_histogram()
+
+# plot the somatic p-values as density plots
+p.value.t_v_const <- as.data.frame(calls.t_v_const[, c("key", "somatic_p_value")])
+p.value.t_v_const$comparison <- "T vs. blood"
+
+p.value.t_v_me <- as.data.frame(calls.t_v_const[, c("key", "t_v_ME.pvalue")])
+p.value.t_v_me$comparison <- "T vs. ME"
+colnames(p.value.t_v_me) <- colnames(p.value.t_v_const)
+
+data.p_value <- rbind(p.value.t_v_const, p.value.t_v_me)
+data.p_value$somatic_p_value[is.na(data.p_value$somatic_p_value)] <- 0
+
+ggplot(data.p_value, aes(x=somatic_p_value, color=comparison, fill=comparison)) +
+  geom_histogram(alpha=0.5, position="identity", binwidth = 0.1) +
+  xlab("Somatic p-value") + ylab("Number of mutations")
+
+# order by t vs. me points
+p.value.t_v_me[is.na(p.value.t_v_me)] <- 0
+p.value.t_v_me <- p.value.t_v_me[order(p.value.t_v_me$somatic_p_value), ]
+p.value.t_v_me$somatic_p_value <- factor(p.value.t_v_me$somatic_p_value, as.numeric(p.value.t_v_me$somatic_p_value))
+
+p.value.t_v_const <- p.value.t_v_const[order(match(p.value.t_v_const[ , c("key")], p.value.t_v_me[ , c("key")])),]
+p.value.t_v_const$somatic_p_value <- factor(p.value.t_v_const$somatic_p_value, as.numeric(p.value.t_v_const$somatic_p_value))
+
+# or plot the data as layers:
+ggplot() + 
+    geom_point(
+        data=p.value.t_v_me,
+        aes(x=p.value.t_v_me$key, y=p.value.t_v_me$somatic_p_value), 
+        color="orange") +
+    geom_point(
+        data=p.value.t_v_const, 
+        aes(x=p.value.t_v_const$key, y=p.value.t_v_const$somatic_p_value), 
+        color="blue")
+
+# or plot as correlation plot
+p <- ggplot(calls.t_v_const, aes(somatic_p_value, t_v_ME.pvalue)) + 
+  geom_point() + 
+  xlab("Somatic p-value (Tumor vs. Blood)") +
+  ylab("Somatic p-value (Tumor vs. ME)") +
+  geom_vline(xintercept = 0.05, linetype="dotted", color="red") +
+  geom_hline(yintercept = 0.05, linetype="dotted", color="red")
+
+```
+
+## ###############################################################################################
+## Visualization
+## ###############################################################################################
+
+Plots to answer the questions:
+
+1. For each sample in the validation cohort, how does the total number of SNVs compare
+2. What is allele frequency correlation between the two datasets?
+
+```{r}
+library(ggplot2)
+
+# tumor vs. microenvironment
+calls.t_v_me <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/not_validation/snvs.all.intersect.txt", sep = "\t", header = TRUE, fill = TRUE)
+
+calls.t_v_me$comparison <- "tumor vs. ME"
+
+# tumor vs. constitutional DNA
+calls.t_v_const <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/validation/analysis/snvs.T_vs_const.intersect.txt", sep = "\t", header = TRUE, fill = TRUE)
+calls.t_v_const$comparison <- "tumor vs. constitutional DNA"
+
+# extract only tumors that are in the validation cohort
+tumors_validation <- as.vector(unique(calls.t_v_const$tumor_id))
+calls.t_v_me <- subset(calls.t_v_me, tumor_id %in% tumors_validation)
+calls.t_v_me$tumor_id <- factor(calls.t_v_me$tumor_id)
+
+calls.all <- rbind(calls.t_v_const, calls.t_v_me)
+
+# get data for mutation counts
+calls.counts <- with (calls.all, table(tumor_id, comparison))
+
+ggplot(as.data.frame(calls.counts), aes(factor(tumor_id), Freq, fill = comparison)) +     
+  geom_col(position = 'dodge') +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  xlab("") +
+  ylab("Number of SNVs and indels")
+  
+# plot total numbers of mutations by SNV/indel for t vs. const. dataset
+calls.t_v_const.counts <- as.data.frame(table(calls.t_v_const$tumor_id, calls.t_v_const$type))
+colnames(calls.t_v_const.counts) <- c("tumor_id", "type", "num_mutations")
+  
+ggplot(calls.t_v_const.counts, aes(x=tumor_id, y=num_mutations, fill = type)) +     
+  geom_bar(stat = 'identity', width = 0.6) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  xlab("") +
+  ylab("Number of mutations")
+
+```
+
+```{r}
+library(plyr)
+library(ggplot2)
+
+calls.all <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/not_validation/snvs.all.intersect.txt", sep = "\t", header = TRUE, fill = TRUE)
+
+calls.all$class <- revalue(calls.all$effect, c("NON_SYNONYMOUS_CODING"="Missense", 
+                           "NON_SYNONYMOUS_START"="Missense",
+                           "START_LOST"="Start Lost",
+                           "STOP_LOST"="Missense",
+                           "STOP_GAINED"="Nonsense",
+                           "CODON_CHANGE_PLUS_CODON_DELETION"="In-frame Indel",
+                           "CODON_CHANGE_PLUS_CODON_INSERTION"="In-frame Indel",
+                           "CODON_DELETION"="In-frame Indel",
+                           "CODON_INSERTION"="In-frame Indel",
+                           "FRAME_SHIFT"="Frameshift Indel",
+                           "FRAME_SHIFT+SPLICE_SITE_ACCEPTOR"="Frameshift Indel",
+                           "FRAME_SHIFT+SPLICE_SITE_DONOR"="Frameshift Indel",
+                           "FRAME_SHIFT+STOP_GAINED"="Frameshift Indel",
+                           "SPLICE_SITE_ACCEPTOR+CODON_CHANGE_PLUS_CODON_DELETION"="In-frame Indel",
+                           "SPLICE_SITE_DONOR+CODON_CHANGE_PLUS_CODON_DELETION"="In-frame Indel",
+                           "STOP_LOST+CODON_DELETION"="In-frame Indel",
+                           "SPLICE_SITE_ACCEPTOR"="Splice site",
+                           "SPLICE_SITE_DONOR"="Splice site",
+                           "UTR_3_PRIME"="3' UTR",
+                           "UTR_5_PRIME"="5' UTR"
+                           ))
+
+data.df <- as.data.frame(table(calls.all$tumor_id, calls.all$class))
+colnames(data.df) <- c("sample", "variant_class", "count")
+
+ggplot(data = data.df, aes(x = sample, y = count, fill = variant_class)) + 
+  geom_bar(stat = "identity", width = 0.6) + 
+  geom_text(aes(label=count), vjust=-0.25) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_fill_discrete(name = "Variant Class")
+
+```
+
+## Allele frequency
+
+```{r}
+library(gridExtra)
+library(gtable)
+library(ggplot2)
+
+# for each sample, create AF density plot with vertical at peak value
+AF.plots <- vector('list', length(unique(calls.all$tumor_id)))
+for (i in seq_along(unique(calls.all$tumor_id))) {
+  temp <- subset(calls.all, calls.all$tumor_id == unique(calls.all$tumor_id)[i])
+  
+  num_mutations <- nrow(temp)
+  
+  # identify peak value for current sample
+  max_y_density <- which.max(density(temp$allele_freq_tumor)$y)
+  max_x_intercept <- density(temp$allele_freq_tumor)$x[max_y_density]
+  max_y_intercept <- density(temp$allele_freq_tumor)$y[max_y_density]
+  
+  print(max_y_intercept)
+  
+  AF.plots[[i]] <- ggplot(temp, aes(as.numeric(allele_freq_tumor))) + 
+    geom_density() +
+    geom_vline(xintercept = max_x_intercept, col="red", lty=2) +
+    xlab("Allele frequency (%)") + ylab("Density") +
+    annotate("text", 
+             y = max_y_intercept+0.2*max_y_intercept,
+             x = max(temp$allele_freq_tumor),
+             label = paste("Peak AF: ", round(max_x_intercept, digits = 2), "%", sep = ""),
+             hjust = 1) + 
+    theme(axis.title.x = element_blank(), axis.title.y = element_blank()) +
+    ylim(0, max_y_intercept+0.25*max_y_intercept) +
+    ggtitle(label = paste(temp$tumor_id, " (n = ", num_mutations, ")", sep = ""))
+}
+#do.call("grid.arrange", c(AF.plots, ncol=1))
+grid.arrange(grobs = AF.plots, ncol=3, bottom = "Allele frequency (%)", left = "Density")
+
+#y = max(density(temp$allele_freq_tumor)$y),
+
+# plot all samples
+p <- ggplot(calls.all, aes(as.numeric(allele_freq_tumor), colour = tumor_id)) + 
+  geom_density() + 
+  xlab ("Allele frequency (%)") + 
+  ylab("Density")
+
+# faceted plot (one distribution per sample)
+p + facet_grid(tumor_id ~ ., scales = "free")
+
+# or organize plots into 2 columns
+p + facet_wrap(~ tumor_id, ncol=2)
+
+```

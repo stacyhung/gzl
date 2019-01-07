@@ -1,0 +1,310 @@
+---
+title: "ROC analysis of T vs. ME thresholds"
+author: "Stacy Hung"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+## ############################################################
+## Optimize variant calling thresholds for tumor vs. ME samples
+## ############################################################
+
+Assess sensitivity and specificity of variant detection using tumor vs. constitutional as the gold standard.
+
+Relevant definitions:
+TP = variant is detected and part of the gold std dataset
+TN = variant is not detected and not part of the gold std dataset
+FP = variant is detected and not part of the gold std dataset
+FN = variant is not detected, but part of the gold std dataset
+
+Thresholds to assess (each as many different cutoffs as logical):
+1. Amount of normal contamination (% AF in normal)
+2. Number of variant reads present in the normal sample
+3. Somatic p-value (normally set to p < 0.05)
+
+```{r}
+library(plyr) # for revalue function
+library(hashmap) # for hashmap function
+library(ggplot2)
+
+# read in variant calls for tumor vs. const
+gold.data <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/validation/analysis/snvs.T_vs_const.intersect.txt", sep = "\t", header = TRUE, fill = TRUE)
+
+# remove irrelevant columns to make the dataset as small and efficient to work with as possible
+keeps <- c("tumor_id", "type", "chr", "pos", "gene", "ref", "alt", 
+           "allele_freq_normal", "allele_freq_tumor", 
+           "var_reads_normal", "var_reads_tumor", "effect", "somatic_p_value")
+gold.data <- gold.data[keeps]
+
+# the dataset to assess (tumor vs. ME)
+calls.t_v_ME <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/validation/varScan.paired.pvalue_1/varScan.all.paired-snps_and_indels.txt", sep = "\t", header = TRUE, fill = TRUE)
+calls.t_v_ME <- calls.t_v_ME[c(keeps, "gmaf")]
+
+# create keys for each dataset to find overlapping mutations
+
+# key: tumor_id, "chr", "pos", "ref", "alt"
+gold.data$key <- as.character(paste(
+  gold.data$tumor_id,
+  gold.data$chr,
+  gold.data$pos,
+  gold.data$ref,
+  gold.data$alt,
+  sep = "."
+))
+
+calls.t_v_ME$key <- as.character(paste(
+  calls.t_v_ME$tumor_id,
+  calls.t_v_ME$chr,
+  calls.t_v_ME$pos,
+  calls.t_v_ME$ref,
+  calls.t_v_ME$alt,
+  sep = "."
+))
+
+# fill in data required for ROC analysis
+ROC.data <- data.frame(
+  AF_normal.threshold_value = numeric(),
+  somatic_p_value.threshold_value = numeric(),
+  TP = numeric(),
+  FP = numeric(),
+  FN = numeric(),
+  TN = numeric()
+)
+
+# Now for each threshold variable, fill in information, one threshold value at a time
+
+# iterate through a vector of values to iterate through for normal contamination:
+#AF.normal.thresholds <- c(0.1, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 10, 15, 20, 50)
+AF.normal.thresholds <- c(5, 10, 15, 20, 50)
+#somatic.p_value.thresholds <- c(0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1)
+somatic.p_value.thresholds <- c(0.05, 0.075, 0.1, 0.125, 0.15, 0.175, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 1)
+
+# for each element in AF.normal.thresholds
+for (AF_normal.threshold_value in AF.normal.thresholds) {
+  for (spv.threshold_value in somatic.p_value.thresholds) {
+    # create a subset based on the thresholds
+    calls.filtered <- subset(calls.t_v_ME, as.numeric(calls.t_v_ME$allele_freq_normal) < AF_normal.threshold_value & 
+                               as.numeric(calls.t_v_ME$somatic_p_value) < spv.threshold_value) 
+    calls.unfiltered <- subset(calls.t_v_ME, calls.t_v_ME$allele_freq_normal >= AF_normal.threshold_value |
+                                 calls.t_v_ME$somatic_p_value >= spv.threshold_value)
+    # fill in TP, TN, FP, and FN for the threshold
+    # TP <- overlap of filtered calls with gold standard
+    TP <- length(intersect(unique(calls.filtered$key), unique(gold.data$key)))
+    # FP <- number of filtered calls that are NOT in gold standard (total filtered calls minus TP)
+    FP <- nrow(calls.filtered) - TP
+    # FN <- number of gold standard that are NOT in filtered calls (total gold standard minus TP)
+    FN <- nrow(gold.data) - TP
+    # TN <- unfiltered calls (negative dataset) not in gold (total unfiltered minus overlap of unfiltered + gold std)
+    unfiltered.intersect.gold <- length(intersect(unique(calls.unfiltered$key), unique(gold.data$key)))
+    TN <- nrow(calls.unfiltered) - unfiltered.intersect.gold
+    # insert new row of data
+    ROC.data <- rbind(ROC.data, data.frame(AF_normal.threshold_value, spv.threshold_value, TP, FP, FN, TN))
+  }
+}
+
+# Calculate TPR and FPR
+# FPR (1 - specificity) = 1 - [ TN / ( TN + FP ) ]
+ROC.data$FPR <- (1 - (ROC.data$TN / (ROC.data$TN + ROC.data$FP)))*100
+# TPR = TP / ( TP + FN )
+ROC.data$TPR <- (ROC.data$TP / (ROC.data$TP + ROC.data$FN))*100
+
+#write.table(ROC.data, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/validation/ROC_analysis/ROC.data.txt", sep = "\t", row.names = FALSE, quote = FALSE)
+
+write.table(ROC.data, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/validation/ROC_analysis/ROC.data.AF_tumor_5.var_reads_tumor_3.modified_thresholds.gmaf_filtered.txt", sep = "\t", row.names = FALSE, quote = FALSE)
+
+# Now plot the ROC curve with the data (x-axis is FPR, y-axis is TPR)
+#ROC.p <- ggplot(data = ROC.data, aes(x=FPR, y=TPR, color=as.factor(AF_normal.threshold_value))) + geom_point()
+
+# with curves labelled by % AF in the normal
+ROC.p <- ggplot(data = ROC.data, aes(x=FPR, y=TPR, group=as.factor(AF_normal.threshold_value))) +
+                  geom_line(aes(color=as.factor(AF_normal.threshold_value))) +
+                  geom_point(aes(color=as.factor(AF_normal.threshold_value))) +
+                  labs(color = "% AF in normal")
+
+# delineating both factors
+ROC.p <- ggplot(data = ROC.data, aes(x=FPR, y=TPR, group=as.factor(AF_normal.threshold_value))) +
+                  geom_line(size=0.8, aes(color=as.factor(AF_normal.threshold_value))) +
+                  geom_point(shape=4, aes(color=as.factor(AF_normal.threshold_value), size=as.factor(spv.threshold_value))) +
+                  labs(color = "% AF in normal", size = "Somatic p-value")
+
+##
+# Analysis of ROC curves suggests that thresholds of % AF in the normal < 0.15 and SPV < 0.175 - where are all the false positives coming from?
+##
+AF_normal.threshold_value <- 0.15
+spv.threshold_value <- 0.175
+# only apply the optimized thresholds (leave other parameters as minimal filters)
+calls.filtered <- subset(calls.t_v_ME, as.numeric(calls.t_v_ME$allele_freq_normal) < AF_normal.threshold_value &
+                           as.numeric(calls.t_v_ME$somatic_p_value) < spv.threshold_value) 
+
+# apply optimized thresholds AND for remaining thresholds, the same values that were used previously 
+calls.filtered <- subset(calls.t_v_ME, as.numeric(calls.t_v_ME$allele_freq_normal) < AF_normal.threshold_value &
+                           as.numeric(calls.t_v_ME$somatic_p_value) < spv.threshold_value &
+                           as.numeric(calls.t_v_ME$var_reads_tumor) > 2 & 
+                           as.numeric(calls.t_v_ME$allele_freq_tumor) >= 5) 
+
+#write.table(calls.filtered, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/validation/ROC_analysis/snvs.AF_norm_0.15.SPV_0.175.AF_tumor_5.var_read_3.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+##
+# Distributions of each variable we want to test (to get an idea of what threshold values to test)
+##
+p.AF_normal <- ggplot(calls.t_v_ME, aes(x = allele_freq_normal, color=tumor_id)) + 
+  geom_density() +
+  xlim(0,10)
+
+p.somatic_pvalue <- ggplot(calls.t_v_ME, aes(x = somatic_p_value, color=tumor_id)) + 
+  geom_density()
+
+##
+```
+
+## Application of optimized thresholds based on ROC analysis to final dataset + comparison with gold standard
+
+```{r}
+library(ggplot2)
+library(RColorBrewer)
+
+# apply optimized thresholds to T vs. ME data (p-value < 1 dataset, GMAF + effect filtered)
+# this is equivalent to calls.filtered from above block of code
+head(calls.filtered)
+
+# overlap with Mutect + Strelka datasets (t vs. ME data)
+
+# read in and process Mutect dataset
+mutect.snvs <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/not_validation/mutect/mutect.all.snps.pass.txt", sep = "\t", header = TRUE)
+
+mutect.snvs$combine = as.character(paste(
+  mutect.snvs$tumor_name,
+  mutect.snvs$contig,
+  mutect.snvs$position,
+  mutect.snvs$ref_allele,
+  mutect.snvs$alt_allele,
+  sep = "."
+))
+
+mutect.snvs$type = "snv"
+
+# read in and process Strelka dataset
+
+strelka.snvs <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/not_validation/strelka/passed.snvs.txt", sep = "\t", header = FALSE)
+strelka.indels <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/not_validation/strelka/passed.indels.txt", sep = "\t", header = FALSE)
+
+# combine snvs and indels - add mutation type as separate "type" column
+strelka.indels$type = "indel"
+strelka.snvs$type = "snv"
+strelka.calls <- rbind(strelka.indels, strelka.snvs)
+
+rm(strelka.indels)
+rm(strelka.snvs)
+
+# extract only columns of interest
+strelka.calls <- strelka.calls[,c("V1", "V2", "V3", "V5", "V6", "type")]
+
+# assign column names to strelka datasets
+colnames(strelka.calls) <- c("sample", "chr", "pos", "ref", "alt", "type")
+
+# remove ".markDups" from the tumor ids
+strelka.calls$sample <- gsub("(.*)\\.markDups(.*)","\\1", strelka.calls$sample)
+
+strelka.calls$combine = as.character(paste(
+  strelka.calls$sample,
+  strelka.calls$chr,
+  strelka.calls$pos,
+  strelka.calls$ref,
+  strelka.calls$alt,
+  sep = "."
+))
+
+# Find the intersection of varscan (snvs), mutect, and strelka (snvs).
+combine.varscan.intersect.strelka <- intersect(unique(calls.filtered$combine), unique(strelka.calls$combine))
+combine.intersect.all <- intersect(unique(combine.varscan.intersect.strelka), unique(mutect.snvs$combine))
+snvs.intersect.all <- subset(calls.filtered, calls.filtered$combine %in% combine.intersect.all)
+snvs.intersect.all$evidence <- "mutect, strelka, varscan"
+#
+# add indels
+# Take the intersect of indels from varscan and strelka indel calls.
+varscan.indels <- subset(calls.filtered, calls.filtered$type == 'indel')
+strelka.indels <- subset(strelka.calls, strelka.calls$type == 'indel')
+combine.varscan.intersect.strelka <- intersect(unique(varscan.indels$combine), unique(strelka.indels$combine))
+indels.intersect.all <- subset(calls.filtered, calls.filtered$combine %in% combine.varscan.intersect.strelka)
+indels.intersect.all$evidence <- "strelka, varscan"
+
+# now combine snvs and indels
+calls.all <- rbind(snvs.intersect.all, indels.intersect.all)
+
+rm(calls.filtered)
+rm(strelka.calls)
+rm(mutect.snvs)
+rm(combine.varscan.intersect.strelka)
+
+calls.all$fun_class[calls.all$fun_class==""] <- "NONE"
+calls.all$fun_class[is.na(calls.all$fun_class)] <- "NONE"
+
+# remove the "combine" and "tumor_id" column, and rearrange columns in the process
+keeps <- c("tumor_id", "type", "chr", "pos", "gene", "ref", "alt", "HGVS_DNA", "HGVS_protein",
+           "allele_freq_normal", "allele_freq_tumor", "depth4_normal", "depth4_tumor", 
+           "var_reads_normal", "var_reads_tumor", "effect", "impact", "fun_class", "transcript_id",
+           "external_id", "somatic_p_value", "somatic_status", "gt_normal", "gt_tumor", "evidence")
+
+calls.all <- calls.all[keeps]
+
+# sort the calls by case, chr, then position
+calls.all <- unique(arrange(calls.all, tumor_id, chr, pos))
+
+# write the results to a text file
+write.table(calls.all, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/validation/ROC_analysis/calls.T_v_ME.validation_cohort.optimized_thresholds.intersect.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+
+# read in variant calls for tumor vs. const
+calls.t_v_const <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/validation/analysis/snvs.T_vs_const.intersect.txt", sep = "\t", header = TRUE, fill = TRUE)
+
+calls.t_v_const$combine = as.character(paste(
+  calls.t_v_const$tumor_id,
+  calls.t_v_const$chr,
+  calls.t_v_const$pos,
+  calls.t_v_const$ref,
+  calls.t_v_const$alt,
+  sep = "."
+))
+
+# Get three datasets of interest - attached "dataset" label to each
+# 1. Mutations that are found in both T vs. ME and T. vs. Blood ("Overlap")
+combine.t_v_me.intersect.t_v_blood <- intersect(unique(calls.all$combine), unique(calls.t_v_const$combine))
+calls.t_v_me.intersect.t_v_blood <- subset(calls.all, calls.all$combine %in% combine.t_v_me.intersect.t_v_blood)
+calls.t_v_me.intersect.t_v_blood$dataset <- "Overlap"
+
+# 2. Mutations that are found only in T vs. ME dataset ("Unique to T vs. ME")
+calls.unique.t_v_me <- subset(calls.all, !(calls.all$combine %in% combine.t_v_me.intersect.t_v_blood))
+calls.unique.t_v_me$dataset <- "Unique to T vs. ME"
+
+# 3. Mutations that are found only in T vs. Blood dataset ("Unique to T vs. Blood")
+calls.unique.t_v_const <- subset(calls.t_v_const, !(calls.t_v_const$combine %in% combine.t_v_me.intersect.t_v_blood))
+calls.unique.t_v_const$dataset <- "Unique to T vs. Blood"
+
+# combine above 3 datasets into one dataframe
+keeps <- c("tumor_id", "type", "effect", "allele_freq_tumor", "dataset")
+calls.t_v_me.intersect.t_v_blood <- calls.t_v_me.intersect.t_v_blood[keeps]
+calls.unique.t_v_me <- calls.unique.t_v_me[keeps]
+calls.unique.t_v_const <- calls.unique.t_v_const[keeps]
+calls.combined <- rbind(calls.unique.t_v_me, calls.t_v_me.intersect.t_v_blood, calls.unique.t_v_const)
+
+# create summary table based on tumor id + dataset type
+summary.table <- as.data.frame(table(calls.combined$tumor_id, calls.combined$dataset))
+colnames(summary.table) <- c("sample", "dataset", "num_mutations")
+dataset.order <- c("Unique to T vs. Blood", "Overlap", "Unique to T vs. ME")
+summary.table <- summary.table[order(match(summary.table$dataset, dataset.order)), ]
+summary.table$dataset <- factor(summary.table$dataset, levels = summary.table$dataset)
+
+# plot barplot, where fill (stack) of bar is defined by dataset type, each bar is a sample (e.g. GZ149T)
+p <- ggplot(summary.table, aes(x=sample, y=num_mutations, fill = dataset)) +     
+  geom_bar(stat = 'identity', width = 0.6) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_fill_brewer(palette="Set1") +
+  xlab("") +
+  ylab("Number of mutations") 
+
+#  geom_text(aes(label=num_mutations), vjust=1.6, color="white", size=3.5)
+
+
+```
+
