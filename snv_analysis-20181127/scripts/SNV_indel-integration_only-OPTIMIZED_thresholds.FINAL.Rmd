@@ -67,7 +67,7 @@ varscan.paired.calls$allele_freq_tumor <- gsub("(.*)\\%(.*)","\\1", varscan.pair
 #blood_normals <- c("GZ092C", "GZ149C", "GZ180C", "GZ184C", "GZ235C", "GZ267C", "GZ032C", "GZ086C")
 blood_normals <- c("GZ092C")
 varscan.paired.calls.T_v_ME <- subset(varscan.paired.calls, !(varscan.paired.calls$normal_id %in% blood_normals))
-varscan.paired.calls.T_v_ME$thresholds <- "SPV < 0.175; VAF normal < 15%"
+varscan.paired.calls.T_v_ME$thresholds <- "SPV < 0.1375; VAF normal < 10%"
 
 # define thresholds
 MAX_GMAF = 0.01             # default
@@ -234,7 +234,7 @@ write.table(calls.not_validation, "/Volumes/shung/projects/gzl_exomes/snv_analys
 
 # write out t vs. me calls for validation cohort (n=7)
 calls.validation <- subset(calls.all, calls.all$normal_id %in% validation_normals)
-write.table(calls.not_validation, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/t_v_me.all/snvs_indels.t_v_me.validation_cohort.OPTIMIZED_thresholds.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+write.table(calls.validation, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/t_v_me.all/snvs_indels.t_v_me.validation_cohort.OPTIMIZED_thresholds.txt", sep = "\t", quote = FALSE, row.names = FALSE)
 
 ```
 
