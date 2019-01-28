@@ -1,0 +1,66 @@
+---
+title: "Analysis of mutations in GZL exomes"
+author: "Stacy Hung"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+## ###############################################################################################
+## Based on SNPs called in all normals (n=37), how many normals does a "target" variant appear in ?  
+## More than 2 or 3 would suggest that the variant is actually a germline SNP.
+## ###############################################################################################
+
+```{r}
+library(plyr) # for revalue function
+library(dplyr)    # filter
+library(hashmap) # for hashmap function
+
+# read in target variants
+target.calls <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/snvs_indels.30_final.default_and_optimized.targets_CS.txt", sep = "\t", header = TRUE, fill = TRUE)
+
+# extract target calls
+target.calls <- subset(target.calls, target.calls$TARGET == 1)
+
+# get list of unique genes in target calls
+target.genes <- unique(target.calls$gene)
+
+# read in normal SNPs (only need sample, chrom, pos, ref, and alt positions)
+snps.normals <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/normal_SNP_analysis/varScan/all.single_samples.varScan.snps.snpEff_canonical.filtered.txt", sep = "\t", header = TRUE, fill = TRUE)
+colnames(snps.normals) <- c("normal_id", "chr", "pos", "ref", "alt", "allele_freq", "gene")
+snps.normals$allele_freq <- gsub("(.*)\\%(.*)","\\1", snps.normals$allele_freq)
+
+# filter for SNPs that occur in target genes
+snps.normals <- filter(snps.normals, snps.normals$gene %in% target.genes)
+  
+# create keys to cross-reference: "chr", "pos", "ref", "alt"
+snps.normals$key <- as.character(paste(
+  snps.normals$chr,
+  snps.normals$pos,
+  snps.normals$ref,
+  snps.normals$alt,
+  sep = "."
+))
+
+target.calls$key <- as.character(paste(
+  target.calls$chr,
+  target.calls$pos,
+  target.calls$ref,
+  target.calls$alt,
+  sep = "."
+))
+
+# create a table of snps
+snps.counts <- as.data.frame(table(snps.normals$key))
+colnames(snps.counts) <- c("snp", "num_normals")
+hash.snp.counts <- hashmap(as.character(snps.counts$snp), as.numeric(snps.counts$num_normals))
+
+target.calls$num_normals <- 0
+# now cross reference target calls with snps 
+for (i in 1:nrow(target.calls)){
+  target.calls[i, ]$num_normals <- hash.snp.counts[[target.calls[i, ]$key]]
+}
+
+write.table(target.calls, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/snvs_indels.30_final.default_and_optimized.num_normals", sep = "\t", quote = FALSE, row.names = FALSE)
+
+```
