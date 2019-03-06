@@ -1,0 +1,230 @@
+---
+title: "Analysis of mutations in GZL exomes"
+author: "Stacy Hung"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+OPTIMIZED thresholds (*based on ROC analysis) + additional filters:
+*1. Variant allele frequency in the normal < 15% (default: VAF in normal < 5% of VAF in tumor)
+*2. Somatic p-value < 0.175 (default: 0.05)
+3. Variant reads in tumor >= 3 (should be filtered already)
+4. Variant allele frequency in tumor >= 5% (should be filtered already)
+
+
+
+## ###############################################################################################
+## Load and process datasets for paired T-N analysis (VarScan paired, MuTect, Strelka)
+## ###############################################################################################
+
+```{r}
+library(dplyr)    # filter
+library(tidyr)    # separate
+
+#**************
+#*  VARSCAN   *
+#**************
+varscan.paired.snvs <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/t_v_me.all/varScan/all.paired_samples.varScan.snps.filtered.txt", sep = "\t", header = TRUE, fill = TRUE)
+varscan.paired.indels <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/t_v_me.all/varScan/all.paired_samples.varScan.indels.filtered.txt", sep = "\t", header = TRUE, fill = TRUE)
+
+# combine snvs and indel - add mutation type as separate "type" column
+varscan.paired.snvs$type = "snv"
+varscan.paired.indels$type = "indel"
+varscan.paired.calls <- rbind(varscan.paired.snvs, varscan.paired.indels)
+
+rm(varscan.paired.snvs)
+rm(varscan.paired.indels)
+
+# rename columns
+colnames(varscan.paired.calls) <- c("sample", "chr", "pos", "external_id", "ref", "alt", "qual", "filter",
+                            "depth", "somatic_status", "ssc", "gpv", "somatic_p_value", "cda",
+                            "KG_validated", "om", "pm", "gmaf", "gt_normal", "gt_tumor", "gq_normal", "gq_tumor",
+                            "depth_normal", "depth_tumor", "ref_reads_normal", "ref_reads_tumor",
+                            "var_reads_normal", "var_reads_tumor", "allele_freq_normal", "allele_freq_tumor",
+                            "depth4_normal", "depth4_tumor", "effect", "impact", "fun_class", "HGVS_DNA",
+                            "HGVS_protein", "gene", "biotype", "coding", "transcript_id", "exon_rank", "type")
+
+# create a tumor_id column based on the sample id (format is <tumor_id>_<normal_id>) - e.g. GE0556B_GE0556-N
+varscan.paired.calls$tumor_id <- gsub("(.*)\\_GZ(.*)","\\1", varscan.paired.calls$sample)
+# similarly create a normal_id column
+varscan.paired.calls$normal_id <- paste("GZ", gsub("(.*)\\_GZ(.*)","\\2", varscan.paired.calls$sample), sep="")
+
+# remove ".markDups" from the ids
+varscan.paired.calls$tumor_id <- gsub("(.*)\\.markDups(.*)","\\1", varscan.paired.calls$tumor_id)
+varscan.paired.calls$normal_id <- gsub("(.*)\\.markDups(.*)","\\1", varscan.paired.calls$normal_id)
+varscan.paired.calls$normal_id <- gsub("(.*)\\.picardMarkDups(.*)","\\1", varscan.paired.calls$normal_id)
+
+# remove "%" from the allele frequency
+varscan.paired.calls$allele_freq_normal <- gsub("(.*)\\%(.*)","\\1", varscan.paired.calls$allele_freq_normal)
+varscan.paired.calls$allele_freq_tumor <- gsub("(.*)\\%(.*)","\\1", varscan.paired.calls$allele_freq_tumor)
+
+########################
+# Application of filters
+########################
+
+# Remove sample 92 since this is the only case that does not have a paired ME normal (only blood normal)
+#blood_normals <- c("GZ092C", "GZ149C", "GZ180C", "GZ184C", "GZ235C", "GZ267C", "GZ032C", "GZ086C")
+blood_normals <- c("GZ092C")
+varscan.paired.calls.T_v_ME <- subset(varscan.paired.calls, !(varscan.paired.calls$normal_id %in% blood_normals))
+varscan.paired.calls.T_v_ME$thresholds <- "SPV < 0.1375; VAF normal < 10%"
+
+# define thresholds
+MAX_GMAF = 0.01             # default
+MIN_VAR_READS_TUMOR = 3     # default
+MIN_VAR_AF_TUMOR = 5        # default; as a percentage
+
+# apply OPTIMIZED thresholds to tumor vs. ME samples
+MAX_SOMATIC_PVAL = 0.1375   # OPTIMIZED
+MAX_VAR_AF_NORMAL = 10      # OPTIMIZED; as a percentage
+
+varscan.paired.calls.T_v_ME <- filter(varscan.paired.calls.T_v_ME, as.numeric(somatic_status) == 2)
+varscan.paired.calls.T_v_ME <- filter(varscan.paired.calls.T_v_ME, as.numeric(gmaf) < MAX_GMAF | is.na(gmaf))
+varscan.paired.calls.T_v_ME <- filter(varscan.paired.calls.T_v_ME, as.numeric(somatic_p_value) < MAX_SOMATIC_PVAL)
+varscan.paired.calls.T_v_ME <- filter(varscan.paired.calls.T_v_ME, as.numeric(var_reads_tumor) >= MIN_VAR_READS_TUMOR)
+varscan.paired.calls.T_v_ME <- filter(varscan.paired.calls.T_v_ME, as.numeric(allele_freq_tumor) >= MIN_VAR_AF_TUMOR)
+varscan.paired.calls.T_v_ME <- filter(varscan.paired.calls.T_v_ME, as.numeric(allele_freq_normal) < MAX_VAR_AF_NORMAL)
+
+# remove unneeded columns and rearrange as necessary
+# last few columns are for initial filtering and reference and can be removed later
+keeps <- c("tumor_id", "normal_id", "type", "chr", "pos", "gene", "ref", "alt", "HGVS_DNA", "HGVS_protein",
+           "allele_freq_normal", "allele_freq_tumor", "depth4_normal", "depth4_tumor", 
+           "var_reads_normal", "var_reads_tumor", "effect", "impact", "fun_class", "transcript_id",
+           "external_id", "somatic_p_value", "somatic_status", "gt_normal", "gt_tumor", "gmaf", "thresholds")
+varscan.paired.calls <- varscan.paired.calls.T_v_ME
+rm(varscan.paired.calls.T_v_ME)
+varscan.paired.calls <- varscan.paired.calls[keeps]
+
+# filter HGVS calls for slient mutations (to include for MutSig input)
+varscan.paired.calls <- unique(rbind(
+                varscan.paired.calls[grep("\\bSYNONYMOUS_CODING", varscan.paired.calls$effect), ],
+                varscan.paired.calls[grepl("SYNONYMOUS_STOP", varscan.paired.calls$effect), ]
+                ))
+varscan.paired.calls$effect <- factor(varscan.paired.calls$effect)
+
+# other effects to include:
+# SPLICE_SITE_REGION ? [IMPACT: LOW] - desc: A sequence variant in which a change has occurred within the region of the splice site, either within 1-3 bases of the exon or 3-8 bases of the intron.
+# EXON ? [IMPACT: MODIFIER] - desc: The variant hits an exon (from a non-coding transcript) or a retained intron.
+# SYNONYMOUS_STOP? [IMPACT: LOW] - desc: Variant causes stop codon to be mutated into another stop codon. e.g.: taA/taG, */*
+
+varscan.paired.calls$combine = as.character(paste(
+  varscan.paired.calls$tumor_id, 
+  varscan.paired.calls$chr, 
+  varscan.paired.calls$pos, 
+  varscan.paired.calls$ref,
+  varscan.paired.calls$alt,
+  sep = "."
+  ))
+
+# sort the calls by case, chr, then position
+varscan.paired.calls <- arrange(varscan.paired.calls, tumor_id, chr, pos)
+
+# print out the results (these will be VarScan not intersected with any other methods)
+write.table(varscan.paired.calls, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/t_v_me.all/varScan/varScan-t_v_me_all-snvs_indels-filtered_optimized-silent.ss_filtered.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+#**************
+#*   MUTECT   *
+#**************
+
+# NB: the raw output file first needs to be cleaned up (includes extra headers from every tumor file), and will also include file names from performing an egrep on multiple files.  This can be done quickly in the command line environment.
+mutect.snvs <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/t_v_me.all/mutect/mutect.all.snps.pass.txt", sep = "\t", header = TRUE)
+
+mutect.snvs$combine = as.character(paste(
+  mutect.snvs$tumor_name,
+  mutect.snvs$contig,
+  mutect.snvs$position,
+  mutect.snvs$ref_allele,
+  mutect.snvs$alt_allele,
+  sep = "."
+))
+
+mutect.snvs$type = "snv"
+
+#**************
+#*  STRELKA   *
+#**************
+strelka.snvs <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/t_v_me.all/strelka/passed.snvs.txt", sep = "\t", header = FALSE)
+strelka.indels <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/t_v_me.all/strelka/passed.indels.txt", sep = "\t", header = FALSE)
+
+# combine snvs and indels - add mutation type as separate "type" column
+strelka.indels$type = "indel"
+strelka.snvs$type = "snv"
+strelka.calls <- rbind(strelka.indels, strelka.snvs)
+
+rm(strelka.indels)
+rm(strelka.snvs)
+
+# extract only columns of interest
+strelka.calls <- strelka.calls[,c("V1", "V2", "V3", "V5", "V6", "type")]
+
+# assign column names to strelka datasets
+colnames(strelka.calls) <- c("sample", "chr", "pos", "ref", "alt", "type")
+
+# remove ".markDups" from the tumor ids
+strelka.calls$sample <- gsub("(.*)\\.markDups(.*)","\\1", strelka.calls$sample)
+
+strelka.calls$combine = as.character(paste(
+  strelka.calls$sample,
+  strelka.calls$chr,
+  strelka.calls$pos,
+  strelka.calls$ref,
+  strelka.calls$alt,
+  sep = "."
+))
+
+# Find the intersection of varscan (snvs), mutect, and strelka (snvs).
+combine.varscan.intersect.strelka <- intersect(unique(varscan.paired.calls$combine), unique(strelka.calls$combine))
+combine.intersect.all <- intersect(unique(combine.varscan.intersect.strelka), unique(mutect.snvs$combine))
+snvs.intersect.all <- subset(varscan.paired.calls, varscan.paired.calls$combine %in% combine.intersect.all)
+snvs.intersect.all$evidence <- "mutect, strelka, varscan"
+#
+# add indels
+# Take the intersect of indels from varscan and strelka indel calls.
+varscan.indels <- subset(varscan.paired.calls, varscan.paired.calls$type == 'indel')
+strelka.indels <- subset(strelka.calls, strelka.calls$type == 'indel')
+combine.varscan.intersect.strelka <- intersect(unique(varscan.indels$combine), unique(strelka.indels$combine))
+indels.intersect.all <- subset(varscan.paired.calls, varscan.paired.calls$combine %in% combine.varscan.intersect.strelka)
+indels.intersect.all$evidence <- "strelka, varscan"
+
+# now combine snvs and indels
+calls.all <- rbind(snvs.intersect.all, indels.intersect.all)
+
+rm(varscan.paired.calls)
+rm(strelka.calls)
+rm(mutect.snvs)
+rm(combine.varscan.intersect.strelka)
+rm(combine.intersect.all)
+rm(snvs.intersect.all)
+rm(varscan.indels)
+rm(strelka.indels)
+rm(indels.intersect.all)
+
+# remove NA's and blanks for functional class
+calls.all$fun_class[calls.all$fun_class==""] <- "NONE"
+calls.all$fun_class[is.na(calls.all$fun_class)] <- "NONE"
+
+# remove the "combine" and "tumor_id" column, and rearrange columns in the process
+keeps <- c("tumor_id", "normal_id", "type", "chr", "pos", "gene", "ref", "alt", "HGVS_DNA", "HGVS_protein",
+           "allele_freq_normal", "allele_freq_tumor", "depth4_normal", "depth4_tumor", 
+           "var_reads_normal", "var_reads_tumor", "effect", "impact", "fun_class", "transcript_id",
+           "external_id", "somatic_p_value", "somatic_status", "gt_normal", "gt_tumor", "gmaf", "evidence", "thresholds")
+
+calls.all <- calls.all[keeps]
+
+# sort the calls by case, chr, then position
+calls.all <- unique(arrange(calls.all, tumor_id, chr, pos))
+
+# write the results to a text file
+write.table(calls.all, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/t_v_me.all/snvs_indels.t_v_me.OPTIMIZED_thresholds.silent.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+# write out the final t vs. me calls (n=22)
+validation_normals <- c("GZ149_MELMD", "GZ180_MELMD", "GZ184_MELMD", "GZ235_MELMD", "GZ267_MELMD", "GZ032_MELMD", "GZ086_MELMD")
+calls.not_validation <- subset(calls.all, !(calls.all$normal_id %in% validation_normals))
+write.table(calls.not_validation, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/t_v_me.all/snvs_indels.t_v_me.not_validation_cohort.OPTIMIZED_thresholds.silent.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+# write out t vs. me calls for validation cohort (n=7)
+#calls.validation <- subset(calls.all, calls.all$normal_id %in% validation_normals)
+#write.table(calls.validation, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/t_v_me.all/snvs_indels.t_v_me.validation_cohort.OPTIMIZED_thresholds.silent.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+```
+
