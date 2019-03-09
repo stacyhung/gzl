@@ -21,18 +21,19 @@ target.calls <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-2018
 
 # read in the list of genes for which to validate variants for:
 #target.genes <- unique(read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/normal_SNP_analysis/to_validate_round2/target_genes_to_validate.txt", sep = "\t", header = TRUE))
-target.genes <- unique(read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/normal_SNP_analysis/to_validate_round3/target_genes_to_validate.txt", sep = "\t", header = TRUE))
+target.genes <- unique(read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/normal_SNP_analysis/to_validate_all/target_gene_list.txt", sep = "\t", header = TRUE))
 
 # extract target calls
 target.calls <- filter(target.calls, target.calls$gene %in% target.genes$gene)
 
 # read in normal SNPs (only need sample, chrom, pos, ref, and alt positions)
-snps.normals <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/normal_SNP_analysis/varScan/all.single_samples.varScan.snps.snpEff_canonical.filtered.txt", sep = "\t", header = TRUE, fill = TRUE)
+# NB: this variant list was obtained by running VarScan on all 37 normals with PVAL=1 and MIN_VARIANT_READS=3 as the only thresholds
+snps.normals <- unique(read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/normal_SNP_analysis/varScan/all.single_samples.varScan.snps.snpEff_canonical.filtered.txt", sep = "\t", header = TRUE, fill = TRUE))
 colnames(snps.normals) <- c("normal_id", "chr", "pos", "ref", "alt", "allele_freq", "gene")
 snps.normals$allele_freq <- gsub("(.*)\\%(.*)","\\1", snps.normals$allele_freq)
 
 # read in normal indels 
-indels.normals <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/normal_SNP_analysis/varScan/all.single_samples.varScan.indels.snpEff_canonical.indels_annotated.cut.txt", sep = "\t", header = TRUE, fill = TRUE)
+indels.normals <- unique(read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/normal_SNP_analysis/varScan/all.single_samples.varScan.indels.snpEff_canonical.indels_annotated.cut.txt", sep = "\t", header = TRUE, fill = TRUE))
 colnames(indels.normals) <- c("normal_id", "chr", "pos", "ref", "alt", "allele_freq", "gene")
 indels.normals$allele_freq <- gsub("(.*)\\%(.*)","\\1", indels.normals$allele_freq)
 
@@ -54,7 +55,7 @@ calls.normals$key <- as.character(paste(
 ))
 
 #write.table(calls.normals, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/normal_SNP_analysis/varScan/snps_and_indels.target_genes.round2.txt", sep = "\t", quote = FALSE, row.names = FALSE)
-write.table(calls.normals, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/normal_SNP_analysis/varScan/snps_and_indels.target_genes.round3.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+write.table(calls.normals, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/normal_SNP_analysis/varScan/snps_and_indels.target_genes.all.txt", sep = "\t", quote = FALSE, row.names = FALSE)
 
 target.calls$key <- as.character(paste(
   target.calls$chr,
@@ -77,11 +78,11 @@ for (i in 1:nrow(target.calls)){
 }
 
 #write.table(target.calls, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/snvs_indels.30_final.default_and_optimized.num_normals.v3_targets.txt", sep = "\t", quote = FALSE, row.names = FALSE)
-write.table(target.calls, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/snvs_indels.30_final.default_and_optimized.num_normals.MutSig_new_targets.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+write.table(target.calls, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/snvs_indels.30_final.default_and_optimized.num_normals.all_targets.txt", sep = "\t", quote = FALSE, row.names = FALSE)
 
 # extract germline variants that had a hit in the target list:
 calls.normals <- filter(calls.normals, calls.normals$key %in% target.calls$key)
 
-write.table(calls.normals, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/normal_SNP_analysis/to_validate_round3/snps_and_indels.target_variants.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+write.table(calls.normals, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/normal_SNP_analysis/to_validate_all/snps_and_indels.target_variants.txt", sep = "\t", quote = FALSE, row.names = FALSE)
 
 ```
