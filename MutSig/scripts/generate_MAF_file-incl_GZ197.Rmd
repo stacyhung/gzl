@@ -1,0 +1,109 @@
+---
+title: "Generation of MAF files for MutSigCV analysis"
+author: "Stacy Hung"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+MutSigCV is a tool that identifies genes that are significantly mutated in cancer genomes,
+using a model with mutational covariates.
+
+There are 3 input files required: (1) mutation file (e.g. MAF format), (2) coverage table (can be compensated for, if this information is not available) (3) covariates file (provided).
+
+The mutation file is a tab-delimited file listing mutations and requiring the named columns:
+1. gene     hugo symbol
+2. patient  sample identifier
+3. effect   one of "nonsilent" (protein-altering), "silent" (synonymous), or "noncoding" (3' or 5' UTR)
+4. categ    (can be derived from Variant_Classification, Reference_Allele, and Tumor_Seq_Allele1 columns)
+            - Variant_Classification
+            - Reference_Allele
+            - Tumor_Seq_Allele1
+
+```{r}
+library(stringr)
+library(plyr)
+library(dplyr)
+
+# load in data
+mutations.cohort <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/snvs_indels.30_final.default_and_optimized.incl_silent.txt", sep = "\t", header = TRUE, fill = TRUE)
+
+# read in GZ197 mutations (has no silent mutations)
+mutations.GZ197 <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/t_v_me.all/snvs_indels.t_v_me.GZ197.OPTIMIZED_thresholds.txt", sep = "\t", header = TRUE, fill = TRUE)
+
+# combine first round cohort mutations with GZ197
+mutations <- rbind(mutations.cohort, mutations.GZ197)
+
+# remove UTR mutations (not accepted for input by MutSig)
+UTR_mutations <- c("UTR_3_PRIME", "UTR_5_PRIME")
+mutations <- filter(mutations, !(mutations$effect %in% UTR_mutations))
+mutations$effect <- factor(mutations$effect)
+
+# map SnpEffect values to equivalent MAF Variant_Classification categories
+# map the actual patient id using the tumor id since the normal has a separate id
+# Note: we will arbitrarily map all "FRAME_SHIFT" mutations to a Frame_Shift_Del since there isn't an easy way to tell otherwise if the frameshift is an insertion or deletion
+snpeff_effect.to.MAF_VarClass <- c(
+                            "CODON_DELETION"="Frame_Shift_Del",
+                            "CODON_INSERTION"="Frame_Shift_Ins",
+                            "NON_SYNONYMOUS_CODING"="Missense_Mutation",
+                            "NON_SYNONYMOUS_START"="Missense_Mutation",
+                            "SPLICE_SITE_ACCEPTOR"="Splice_Site",
+                            "SPLICE_SITE_DONOR"="Splice_Site",
+                            "SPLICE_SITE_REGION"="Splice_Site",
+                            "START_GAINED"="Translation_Start_Site",
+                            "START_LOST"="Missense_Mutation",
+                            "STOP_GAINED"="Nonsense_Mutation",
+                            "STOP_LOST"="Nonstop_Mutation",
+                            "CODON_CHANGE_PLUS_CODON_INSERTION"="Frame_Shift_Ins",
+                            "CODON_CHANGE_PLUS_CODON_DELETION"="Frame_Shift_Del",
+                            "SYNONYMOUS_CODING"="Silent",
+                            "SYNONYMOUS_STOP"="Silent",
+                            "EXON"="Targeted_Region",
+                            "FRAME_SHIFT"="Frame_Shift_Del"
+                            )
+mutations$effect <- revalue(mutations$effect, snpeff_effect.to.MAF_VarClass)
+
+type.to_MAF_type <- c("snp"="SNP",
+                      "indel"="DEL")
+mutations$type <- revalue(mutations$type, type.to_MAF_type)
+
+# keep only the columns that are relevant to MAF generation
+keeps <- c("gene", "tumor_id", "effect", "type", "ref", "alt", "gt_tumor", "impact", "fun_class", 
+           "transcript_id", "chr", "pos")
+mutations <- mutations[keeps]
+
+# rename samples column to match MAF format
+library(data.table)
+setnames(mutations, "tumor_id", "patient")
+setnames(mutations, "effect", "Variant_Classification")
+setnames(mutations, "type", "Variant_Type")
+setnames(mutations, "ref", "Reference_Allele")
+setnames(mutations, "chr", "Chromosome")
+setnames(mutations, "pos", "Start_Position")
+#setnames(mutations, "coding", "effect")
+
+# remove "chr" (to meet requirements for Chromosome column)
+mutations$Chromosome <- gsub("^chr", "", mutations$Chromosome)
+
+# reorder columns:
+keeps <- c("gene", "patient", "Variant_Classification", "Chromosome", 
+           "Start_Position", "Reference_Allele", "alt", "gt_tumor",
+           "impact", "fun_class", "transcript_id")
+mutations <- mutations[keeps]
+
+# fill in Tumor_Seq_Allele1 and Tumor_Seq_Allele2 columns using gt column
+# if gt = "0/1", fill in Tumor_Seq_Allele1 as reference allele, otherwise (gt = 1/1), fill with alterante allele
+mutations$Tumor_Seq_Allele1 <- if_else(mutations$gt == "0/1", 
+                                              mutations$Reference_Allele, 
+                                              mutations$alt)
+mutations$Tumor_Seq_Allele2 <- mutations$alt
+mutations$alt <- NULL
+mutations$gt <- NULL
+
+# fill in gene name as "UNKNOWN" when missing (these are likely mutations that fall just outside the gene)
+mutations$gene <- as.character(mutations$gene)
+mutations$gene[mutations$gene==""] <- "UNKNOWN"
+mutations$gene <- as.factor(mutations$gene)
+
+write.table(mutations, "/Volumes/shung/projects/gzl_exomes/MutSig/input/snvs_indels.30_final+GZ197.default_and_optimized.incl_silent.no_UTR.maf", sep = "\t", quote = FALSE, row.names = FALSE)
+```
