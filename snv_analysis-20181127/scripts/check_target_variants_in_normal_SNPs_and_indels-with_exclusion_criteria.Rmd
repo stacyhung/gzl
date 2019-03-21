@@ -1,0 +1,118 @@
+---
+title: "Analysis of mutations in GZL exomes"
+author: "Stacy Hung"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+## ###############################################################################################
+## Based on SNPs and indels called in all normals (n=37), how many normals does a "target" variant 
+## appear in ?  More than 2 or 3 would suggest that the variant is actually a germline variant.
+## ###############################################################################################
+
+```{r}
+library(plyr) # for revalue function
+library(dplyr)    # filter
+library(hashmap) # for hashmap function
+
+# read in variants for full exome cohort
+variants.part1 <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/snvs_indels.30_final.default_and_optimized.txt", sep = "\t", header = TRUE, fill = TRUE)
+variants.part2 <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/t_v_me.all/snvs_indels.t_v_me.GZ197.OPTIMIZED_thresholds.txt", sep = "\t", header = TRUE, fill = TRUE)
+variants.all <- rbind(variants.part1, variants.part2)
+rm(variants.part1)
+rm(variants.part2)
+
+# read in target genes
+target.genes <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/normal_SNP_analysis/target_genes.FINAL_216.txt", header = FALSE)
+colnames(target.genes) <- c("gene")
+
+# create table to easily reference peak VAF for each tumor sample
+
+
+# filter list of variants present only in target genes
+
+# for each target variant; add data for 2 new columns: normal_SNP_filter, and # normals variant is present in
+
+# if variant is in at least 1 normal that does not include the matching normal
+
+#   if variant is in 2 or more normals, then exclude --> normal_SNP_filter = "EXCLUDE; 2+ normals"
+
+#   else variant must be present in just 1 normal
+
+#       if VAF of normal SNP > peak VAF of corresponding tumor, then exclude --> normal_SNP_filter = "EXCLUDE; 1 normal"
+
+#       else, normal_SNP_filter = "KEEP; 1 normal"
+
+# else, normal_SNP_filter = "KEEP; 0 normals"
+
+# read in target variants
+target.calls <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/snvs_indels.30_final.default_and_optimized.txt", sep = "\t", header = TRUE, fill = TRUE)
+
+# read in the list of genes for which to validate variants for:
+#target.genes <- unique(read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/normal_SNP_analysis/to_validate_round2/target_genes_to_validate.txt", sep = "\t", header = TRUE))
+target.genes <- unique(read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/normal_SNP_analysis/to_validate_all/target_gene_list.txt", sep = "\t", header = TRUE))
+
+# extract target calls
+target.calls <- filter(target.calls, target.calls$gene %in% target.genes$gene)
+
+# read in normal SNPs (only need sample, chrom, pos, ref, and alt positions)
+# NB: this variant list was obtained by running VarScan on all 37 normals with PVAL=1 and MIN_VARIANT_READS=3 as the only thresholds
+snps.normals <- unique(read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/normal_SNP_analysis/varScan/all.single_samples.varScan.snps.snpEff_canonical.filtered.txt", sep = "\t", header = TRUE, fill = TRUE))
+colnames(snps.normals) <- c("normal_id", "chr", "pos", "ref", "alt", "allele_freq", "gene")
+snps.normals$allele_freq <- gsub("(.*)\\%(.*)","\\1", snps.normals$allele_freq)
+
+# read in normal indels 
+indels.normals <- unique(read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/normal_SNP_analysis/varScan/all.single_samples.varScan.indels.snpEff_canonical.indels_annotated.cut.txt", sep = "\t", header = TRUE, fill = TRUE))
+colnames(indels.normals) <- c("normal_id", "chr", "pos", "ref", "alt", "allele_freq", "gene")
+indels.normals$allele_freq <- gsub("(.*)\\%(.*)","\\1", indels.normals$allele_freq)
+
+# combine snps and indels
+calls.normals <- rbind(snps.normals, indels.normals)
+rm(snps.normals)
+rm(indels.normals)
+
+# filter for SNPs that occur in target genes
+calls.normals <- filter(calls.normals, calls.normals$gene %in% target.genes$gene)
+  
+# create keys to cross-reference: "chr", "pos", "ref", "alt"
+calls.normals$key <- as.character(paste(
+  calls.normals$chr,
+  calls.normals$pos,
+  calls.normals$ref,
+  calls.normals$alt,
+  sep = "."
+))
+
+#write.table(calls.normals, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/normal_SNP_analysis/varScan/snps_and_indels.target_genes.round2.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+write.table(calls.normals, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/normal_SNP_analysis/varScan/snps_and_indels.target_genes.all.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+target.calls$key <- as.character(paste(
+  target.calls$chr,
+  target.calls$pos,
+  target.calls$ref,
+  target.calls$alt,
+  sep = "."
+))
+
+# create a table of snps
+snps.counts <- as.data.frame(table(calls.normals$key))
+colnames(snps.counts) <- c("snp", "num_normals")
+hash.snp.counts <- hashmap(as.character(snps.counts$snp), as.numeric(snps.counts$num_normals))
+
+target.calls$num_normals <- 0
+
+# now cross reference target calls with snps 
+for (i in 1:nrow(target.calls)){
+  target.calls[i, ]$num_normals <- hash.snp.counts[[target.calls[i, ]$key]]
+}
+
+#write.table(target.calls, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/snvs_indels.30_final.default_and_optimized.num_normals.v3_targets.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+write.table(target.calls, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/snvs_indels.30_final.default_and_optimized.num_normals.all_targets.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+# extract germline variants that had a hit in the target list:
+calls.normals <- filter(calls.normals, calls.normals$key %in% target.calls$key)
+
+write.table(calls.normals, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/normal_SNP_analysis/to_validate_all/snps_and_indels.target_variants.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+```
