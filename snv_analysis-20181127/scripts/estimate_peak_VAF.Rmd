@@ -1,0 +1,50 @@
+---
+title: "Analysis of mutations in GZL exomes"
+author: "Stacy Hung"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+This script takes in a set of calls, and for each tumor samples, determines the peak VAF (representing a naive estimate of tumor content), which is output to file.  This information can then be used for downstream analysis (e.g. filtering normal SNPs, CNVkit - call estimation using tumor purity).
+
+## Allele frequency
+
+```{r}
+library(gridExtra)
+library(gtable)
+library(ggplot2)
+
+# read in mutations
+variants.part1 <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/snvs_indels.30_final.default_and_optimized.txt", sep = "\t", header = TRUE, fill = TRUE)
+variants.part2 <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/t_v_me.all/snvs_indels.t_v_me.GZ197.OPTIMIZED_thresholds.txt", sep = "\t", header = TRUE, fill = TRUE)
+calls.all <- rbind(variants.part1, variants.part2)
+rm(variants.part1)
+rm(variants.part2)
+
+# create data table with matching tumor and normal, and corresponding peak VAF for tumor sample
+results <- as.data.frame(unique(calls.all[, c("tumor_id", "normal_id")]))
+# initialize columns to fill in
+results$peak_VAF <- 0
+results$est_tumor_content <- 0
+
+# for each sample, create AF density plot with vertical at peak value
+for (i in seq_along(unique(calls.all$tumor_id))) {
+  temp <- subset(calls.all, calls.all$tumor_id == unique(calls.all$tumor_id)[i])
+  
+  num_mutations <- nrow(temp)
+  
+  # identify peak value for current sample
+  max_y_density <- which.max(density(temp$allele_freq_tumor)$y)
+  max_x_intercept <- density(temp$allele_freq_tumor)$x[max_y_density]
+  max_y_intercept <- density(temp$allele_freq_tumor)$y[max_y_density]
+  
+  results$peak_VAF[results$tumor_id == unique(calls.all$tumor_id)[i]] <- max_y_intercept
+}
+
+# estimate tumor content
+results$est_tumor_content <- 2*results$peak_VAF
+
+write.table(results, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/WES_data/all.tumors-peak_VAF_and_est_tumor_content.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+```
