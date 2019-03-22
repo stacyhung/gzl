@@ -39,7 +39,7 @@ for (i in seq_along(unique(calls.all$tumor_id))) {
   max_x_intercept <- density(temp$allele_freq_tumor)$x[max_y_density]
   max_y_intercept <- density(temp$allele_freq_tumor)$y[max_y_density]
   
-  results$peak_VAF[results$tumor_id == unique(calls.all$tumor_id)[i]] <- max_y_intercept
+  results$peak_VAF[results$tumor_id == unique(calls.all$tumor_id)[i]] <- round(max_x_intercept, digits = 2)
 }
 
 # estimate tumor content
