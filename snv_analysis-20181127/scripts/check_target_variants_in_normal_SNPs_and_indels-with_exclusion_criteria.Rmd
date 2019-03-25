@@ -28,7 +28,7 @@ rm(calls.part1)
 rm(calls.part2)
 
 # read in target genes
-target.genes <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/normal_SNP_analysis/target_genes.FINAL_216.txt", header = FALSE)
+target.genes <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/normal_SNP_analysis/target_genes.FINAL_217.txt", header = FALSE)
 colnames(target.genes) <- c("gene")
 
 # read in reference table with tumor-normal pairs and corresponding peak VAFs
@@ -56,6 +56,9 @@ indels.normals$allele_freq <- gsub("(.*)\\%(.*)","\\1", indels.normals$allele_fr
 calls.normals <- rbind(snps.normals, indels.normals)
 rm(snps.normals)
 rm(indels.normals)
+
+omit.cases <- c("GZ222ME", "GZ229ME")
+calls.normals <- filter(calls.normals, !(calls.normals$normal_id %in% omit.cases))
 
 # filter for SNPs that occur in target genes
 calls.normals <- filter(calls.normals, calls.normals$gene %in% target.genes$gene)
@@ -172,6 +175,6 @@ for (i in 1:nrow(target.calls)){
 }
 
 # write out final results
-write.table(target.calls, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/snvs_indels.31_final.default_and_optimized.num_normals.all_targets.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+write.table(target.calls, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/snvs_indels.final_cohort.default_and_optimized.num_normals.217_targets.txt", sep = "\t", quote = FALSE, row.names = FALSE)
 
 ```
