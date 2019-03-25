@@ -1,0 +1,172 @@
+---
+title: "Conversion of mutation summary to MAF"
+author: "Stacy Hung"
+date: "October 22, 2018"
+output: html_document
+---
+
+A Mutation Annotation Format (MAF) file (.maf) is tab-delimited text file that lists mutations, and originates from The Cancer Genome Atlas (TCGA) project, and described in detail here: 
+https://docs.gdc.cancer.gov/Data/File_Formats/MAF_Format/
+
+1. Hugo_Symbol              HUGO gene symbol
+2. Tumor_Sample_Barcode     Sample identifier
+3. Variant_Classification   One of {Missense_Mutation, Frame_Shift_Del, Nonsense_Mutation, Splice_Site, Frame_Shift_Ins, Nonstop_Mutation}
+4. Chromosome               Chromosome of mutation
+5. Start_Position           Start position of the mutation
+6. Reference_Allele         Reference sequence 
+7. Tumor_Seq_Allele1        Same as reference allele if genotype is heterozygous, otherwise variant allele
+8. Tumor_Seq_Allele2        The sequence representing the variant allele
+9. End_Position             End position of the mutation          
+10. Variant_Type            One of {SNP, DEL, INS}
+11. Protein_Change          Amino acid change
+12. VAF                     Variant Allele Frequency
+
+---
+The mutation summary file contains the final list of (filtered) SNVS + indels from the PMBCL cohort (combined paired and unpaired results).  To utilize a variety of visualization tools (e.g. oncoplot), mutations need to be in MAF format.  This script takes the non-MAF version of the mutations and converts them to a MAF formatted file.
+---
+
+## Load mutation calls.
+
+```{r}
+library(dplyr)
+library(plyr)
+library(tidyr)
+library(data.table)
+library(DataCombine)
+
+# read in GZ calls for all exomes (exclude GZ222 and GZ229)
+calls.part1 <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/snvs_indels.30_final.default_and_optimized.txt", sep = "\t", header = TRUE, fill = TRUE)
+calls.part2 <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/t_v_me.all/snvs_indels.t_v_me.GZ197.OPTIMIZED_thresholds.txt", sep = "\t", header = TRUE, fill = TRUE)
+calls.all <- rbind(calls.part1, calls.part2)
+rm(calls.part1)
+rm(calls.part2)
+
+# remove failure cases
+failures <- c("GZ222T", "GZ229T")
+calls.all <- filter(calls.all, !(calls.all$tumor_id %in% failures))
+
+# remove UTR mutations
+calls.all <- unique(rbind(
+              calls.all[grep("SPLICE_SITE_REGION", calls.all$effect), ],
+              calls.all[grep("SPLICE_SITE_ACCEPTOR", calls.all$effect), ],
+              calls.all[grep("SPLICE_SITE_DONOR", calls.all$effect), ],
+              calls.all[grep("CODON_DELETION", calls.all$effect), ],
+              calls.all[grep("CODON_INSERTION", calls.all$effect), ],
+              calls.all[grep("NON_SYNONYMOUS_CODING", calls.all$effect), ],
+              calls.all[grep("NON_SYNONYMOUS_START", calls.all$effect), ],
+              calls.all[grep("START_GAINED", calls.all$effect), ],
+              calls.all[grep("START_LOST", calls.all$effect), ],
+              calls.all[grep("STOP_GAINED", calls.all$effect), ],
+              calls.all[grep("STOP_LOST", calls.all$effect), ],
+              calls.all[grep("FRAME_SHIFT", calls.all$effect), ]
+              ))
+
+calls.all$effect <- factor(calls.all$effect)
+
+# add label for SNP or INS or DEL
+calls.all$type <- if_else(grepl("(DELETION|FRAME_SHIFT)", calls.all$effect), 
+                          "DEL", 
+                          if_else(grepl("INSERTION", calls.all$effect), "INS", "SNP"))
+
+# map SnpEffect values to equivalent MAF Variant_Classification categories
+# Note: we will arbitrarily map all "FRAME_SHIFT" mutations to a Frame_Shift_Del since there isn't an easy way to tell otherwise if the frameshift is an insertion or deletion
+snpeff_effect.to.MAF_VarClass <- c(
+                            "CODON_DELETION"="Frame_Shift_Del",
+                            "CODON_INSERTION"="Frame_Shift_Ins",
+                            "NON_SYNONYMOUS_CODING"="Missense_Mutation",
+                            "NON_SYNONYMOUS_START"="Missense_Mutation",
+                            "SPLICE_SITE_ACCEPTOR"="Splice_Site",
+                            "SPLICE_SITE_DONOR"="Splice_Site",
+                            "SPLICE_SITE_REGION"="Splice_Site",
+                            "START_GAINED"="Translation_Start_Site",
+                            "START_LOST"="Missense_Mutation",
+                            "STOP_GAINED"="Nonsense_Mutation",
+                            "STOP_LOST"="Nonstop_Mutation",
+                            "CODON_CHANGE_PLUS_CODON_INSERTION"="Frame_Shift_Ins",
+                            "CODON_CHANGE_PLUS_CODON_DELETION"="Frame_Shift_Del",
+                            "SYNONYMOUS_CODING"="Silent",
+                            "SYNONYMOUS_STOP"="Silent",
+                            "EXON"="Targeted_Region",
+                            "FRAME_SHIFT"="Frame_Shift_Del"
+                            )
+calls.all$effect <- revalue(calls.all$effect, snpeff_effect.to.MAF_VarClass)
+
+# keep only the columns that are relevant to MAF generation
+keeps <- c("gene", "tumor_id", "effect", "ref", "alt", "HGVS_protein",
+           "chr", "pos", "allele_freq_tumor", "type")
+calls.all <- calls.all[keeps]
+
+# rename samples column to match MAF format
+setnames(calls.all, "gene", "Hugo_Symbol")
+setnames(calls.all, "tumor_id", "Tumor_Sample_Barcode")
+setnames(calls.all, "effect", "Variant_Classification")
+setnames(calls.all, "ref", "Reference_Allele")
+setnames(calls.all, "chr", "Chromosome")
+setnames(calls.all, "pos", "Start_Position")
+setnames(calls.all, "type", "Variant_Type")
+setnames(calls.all, "allele_freq_tumor", "VAF")
+setnames(calls.all, "HGVS_protein", "HGVS")
+
+# remove "chr" prefix to match MAF format
+calls.all$Chromosome <- gsub("^chr", "", calls.all$Chromosome)
+
+# reorder columns
+keeps <- c("Hugo_Symbol", "Tumor_Sample_Barcode", "Variant_Classification", "Chromosome", 
+           "Start_Position", "Reference_Allele", "alt", "Variant_Type", "HGVS", "VAF")
+calls.all <- calls.all[keeps]
+
+# fill in Tumor_Seq_Allele1 and Tumor_Seq_Allele2 columns using gt column
+# if gt = "0/1", fill in Tumor_Seq_Allele1 as reference allele, otherwise (gt = 1/1), fill with alterante allele
+#singles.calls$Tumor_Seq_Allele1 <- if_else(singles.calls$gt == "0/1", 
+#                                              singles.calls$Reference_Allele, 
+#                                              singles.calls$alt)
+mutations$Tumor_Seq_Allele2 <- mutations$alt
+#singles.calls$alt <- NULL
+#singles.calls$gt <- NULL
+
+# fill in gene name as "UNKNOWN" when missing (these are likely mutations that fall just outside the gene)
+mutations$Hugo_Symbol <- as.character(mutations$Hugo_Symbol)
+mutations$Hugo_Symbol[mutations$Hugo_Symbol==""] <- "UNKNOWN"
+mutations$Hugo_Symbol <- as.factor(mutations$Hugo_Symbol)
+
+# Calculate end position
+mutations$End_Position <- mutations$Start_Position # default: SNP
+# For insertions: start coord = end coord + 1 --> end coord = start coord - 1
+mutations$End_Position <- ifelse(mutations$Variant_Type == "INS", 
+                                     mutations$Start_Position - 1,
+                                     mutations$End_Position)
+# For deletions: end coord = start coord + length (deletion) - 1
+#   length (deletion) ~ length (REF) - 1 --> end coord = start coord + length (REF) - 2
+mutations$End_Position <- ifelse(mutations$Variant_Type == "DEL", 
+                                     mutations$Start_Position + nchar(as.character(mutations$Reference_Allele)) - 2, 
+                                     mutations$End_Position)
+
+###--------------------------------------------------------------------------
+### Generate AA change column from HGVS annotations to use for lollipop plots
+###--------------------------------------------------------------------------
+
+mutations <-
+  separate(data = mutations,
+           col = HGVS,
+           into = c("Protein_Change", "CDS_Change"),
+           sep = "/",
+           remove = TRUE,
+           fill = "left")
+
+# mappings for 3-letter amino acids to 1-letter amino acid codes
+AA.replaces <- data.frame(from = c("Ala", "Arg", "Asn", "Asp", "Asx", "Cys", "Glu", "Gln", "Glx", "Gly", "His", 
+                                   "Ile", "Leu", "Lys", "Met", "Phe", "Pro", "Ser", "Thr", "Trp", "Tyr", "Val"), 
+                          to = c("A", "R", "N", "D", "B", "C", "E", "Q", "Z", "G", "H", 
+                                 "I", "L", "K", "M", "F", "P", "S", "T", "W", "Y", "V"))
+
+mutations <- FindReplace(data = mutations, 
+                                    Var = "Protein_Change",
+                                    replaceData = AA.replaces,
+                                    from = "from",
+                                    to = "to",
+                                    exact = FALSE)
+
+# write to output for downstream analysis (e.g. oncoplot, lolliplot)
+write.table(mutations, "/Volumes/shung/projects/PMBCL_exomes/snv_indel_analysis/maf/mutation_summary-paired_and_unpaired.maf", sep = "\t", quote = FALSE, row.names = FALSE)
+
+```
