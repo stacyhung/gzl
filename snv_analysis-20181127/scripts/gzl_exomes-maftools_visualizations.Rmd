@@ -1,0 +1,555 @@
+---
+title: "SNV Heatmap"
+author: "Stacy Hung"
+date: "March 26, 2019"
+output: html_document
+---
+
+This script is used to generate plots for visualizing mutation data for the PMBCL exomes dataset.
+
+## Load packages
+
+```{r}
+# NB: if you need to install this package, install it using devtools from the github source!!!
+# The bioconductor version of GenVisR is buggy (not compatible with required libraries)
+# Installing GenVisR may also require the installation of the VariantAnnotation pacakge (from bioconductor)
+source("https://bioconductor.org/biocLite.R")
+biocLite("VariantAnnotation")
+library("VariantAnnotation")
+
+install.packages("devtools")
+library(devtools)
+install_github("griffithlab/GenVisR")
+library("GenVisR")
+
+source("https://bioconductor.org/biocLite.R")
+biocLite("maftools")
+library(maftools)
+
+library(gridExtra)
+library(dplyr)
+library(plyr)
+```
+
+## Oncoplots
+
+```{r}
+
+# load genes to display for oncoplot
+genes.target <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/WES_data/target_genes.FINAL_217.txt", header = FALSE)
+colnames(genes.target) <- c("gene")
+
+# load metadata
+clinical.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/GZ_WES_cases-clinical_data.mapped.txt", sep = "\t", header = TRUE)
+
+# read in mutations
+mutations <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.maf", sep = "\t", header = TRUE, fill = TRUE)
+# filter for genes of interest
+mutations <- filter(mutations, mutations$Hugo_Symbol %in% genes.target$gene)
+mutations$Hugo_Symbol <- factor(mutations$Hugo_Symbol)
+
+# get list of genes that are mutated in 2 or more cases
+mutations.temp <- unique(mutations[, c("Hugo_Symbol", "Tumor_Sample_Barcode")])
+cases.mutated <- as.data.frame(table(mutations.temp$Hugo_Symbol))
+colnames(cases.mutated) <- c("gene", "cases_mutated")
+cases.mutated <- filter(cases.mutated, cases.mutated$cases_mutated > 1)
+mutations <- filter(mutations, mutations$Hugo_Symbol %in% cases.mutated$gene)
+
+# change mapping of ids
+mutations$Tumor_Sample_Barcode <- revalue(mutations$Tumor_Sample_Barcode, 
+                                          c("GZ_BCC_54_T_LMD"="GZ-BCC-054",
+                                            "GZ_BCC_08_T_LMD"="GZ-BCC-008",
+                                            "GZ_BCC_13_T_LMD"="GZ-BCC-013",
+                                            "GZ_BCC_20_T_LMD"="GZ-BCC-020",
+                                            "GZ32TLMD"="GZ-032",
+                                            "GZ044T-merged"="GZ-044",
+                                            "GZ046T-merged"="GZ-046",
+                                            "GZ048T-merged"="GZ-048",
+                                            "GZ062T-merged"="GZ-062",
+                                            "GZ064T"="GZ-064",
+                                            "GZ068T-merged"="GZ-068",
+                                            "GZ86TLMD"="GZ-086",
+                                            "GZ092_TLMD_2"="GZ-092",
+                                            "GZ095_TLMD_2"="GZ-095",
+                                            "99T"="GZ-099",
+                                            "GZ116T"="GZ-116",
+                                            "GZ149TLMD"="GZ-149", 
+                                            "GZ152T-merged"="GZ-152",
+                                            "176T"="GZ-176",
+                                            "GZ178T"="GZ-178",
+                                            "GZ180_FFPE"="GZ-180",
+                                            "GZ184TLMD"="GZ-184",
+                                            "GZ197_TLMD"="GZ-197",
+                                            "GZ230T"="GZ-230",
+                                            "GZ235T"="GZ-235",
+                                            "GZ267T-merged"="GZ-267",
+                                            "GZ294T"="GZ-294",
+                                            "GZ301T"="GZ-301",
+                                            "GZ310T"="GZ-310"
+                                            ))
+
+#write.table(mutations, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.oncoplot.maf", sep = "\t", row.names = FALSE, quote = FALSE)
+
+mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.oncoplot.maf", clinicalData = clinical.data)
+
+# colours for annotation tracks
+annot.colors <- list(Gender = c("Female" = "palevioletred1", "Male" = "royalblue1"),
+                     EBER = c("Negative" = "black", "Positive" = "red"),
+                     Mediastinal = c("Not_involved" = "grey", "Involved" = "mediumpurple"),
+                     Age_yrs = c("<_45" = "bisque", ">=_45" = "bisque4"),
+                     Path_group = c("0_=_cHL" = "lightsalmon",
+                                   "1_=_cHL-interm" = "khaki1",
+                                   "2_=_LBCL-interm" = "lightgreen", 
+                                   "3_=_LBCL" = "steelblue1")
+               )
+
+# Standard mutation waterfall plot (oncoplot style), and with clinical annotations
+oncoplot(maf = mutations.maf, genes = genes.target$gene, 
+         clinicalFeatures = c("Path_group", "Mediastinal", "EBER", "Gender", "Age_yrs"),
+         drawColBar = FALSE, 
+         legendFontSize = 12, 
+         showTumorSampleBarcodes = TRUE,
+         annotationColor = annot.colors)
+
+# order by path group
+oncoplot(maf = mutations.maf, genes = genes.target$gene, 
+         clinicalFeatures = c("Path_group", "Mediastinal", "EBER", "Gender", "Age_yrs"),
+         drawColBar = FALSE, 
+         legendFontSize = 12, 
+         showTumorSampleBarcodes = TRUE,
+         annotationColor = annot.colors, sortByAnnotation = TRUE)
+
+# order by EBV-status
+oncoplot(maf = mutations.maf, genes = genes.target$gene, 
+         clinicalFeatures = c("EBER", "Path_group", "Mediastinal", "Gender", "Age_yrs"),
+         drawColBar = FALSE, 
+         legendFontSize = 12, 
+         showTumorSampleBarcodes = TRUE,
+         annotationColor = annot.colors, sortByAnnotation = TRUE)
+
+```
+
+## Somatic interactions
+
+```{r}
+
+# plot somatic interactions
+somaticInteractions(maf = mutations.maf, genes=sig.genes, top = 50, pvalue = c(0.05, 0.01))
+
+# oncoplots for EACH mutually exclusive / co-occurring interaction (most significant):
+
+# mutually exclusive interactions: (30x3)
+oncoplot(maf = mutations.maf, genes = c("GNA13", "IL4R"), removeNonMutated = FALSE,
+                     drawRowBar = FALSE, drawColBar = FALSE, titleFontSize = 0, fontSize = 15)
+oncoplot(maf = mutations.maf, genes = c("CISH", "STAT6"), removeNonMutated = FALSE,
+                     drawRowBar = FALSE, drawColBar = FALSE, titleFontSize = 0, fontSize = 15)
+oncoplot(maf = mutations.maf, genes = c("CXCR5", "SOCS1"), removeNonMutated = FALSE,
+                     drawRowBar = FALSE, drawColBar = FALSE, titleFontSize = 0, fontSize = 15)
+
+# co-occurring interactions:
+oncoplot(maf = mutations.maf, genes = c("IRF2BP2", "ACTB"), 
+         removeNonMutated = FALSE, 
+         drawRowBar = FALSE, 
+         drawColBar = FALSE, titleFontSize = 0, fontSize = 15)
+
+laml.titv = titv(maf = mutations.maf, plot = FALSE, useSyn = FALSE)
+# plot titv summary
+plotTiTv(res = laml.titv)
+
+```
+
+## Plotting VAF
+
+```{r}
+library(dplyr)
+library(maftools)
+
+# load top recurrently mutated genes
+supptable2 <- read.table("/Volumes/shung/projects/PMBCL_exomes/manuscript/current/supplementary/supp_table_2.txt", sep = "\t", header = TRUE, fill = TRUE)
+
+mutations.maf <- read.maf("/Volumes/shung/projects/PMBCL_exomes/snv_indel_analysis/maf/mutation_summary-paired_and_unpaired.maf")
+
+sig.genes <- c("SOCS1", "ITPKB", "STAT6", "GNA13", "NFKBIE", "PTPN1", "ZNF217", "IL4R", "ACTB", "HIST1H3D", "CD58", "IRF8", "SGPP1", "TNFAIP3", "GCSAM", "JUNB", "ZFP36L1", "RGS1", "HIST1H2BC", "HIST1H1C", "JAK1", "MS4A1", "SRSF1", "HIST1H1B", "EZH2", "IFNL3", "GDF11", "KLF9", "IL1RAPL2", "SERPINB3", "IGLJ2", "VMP1", "MYC", "LHFPL3", "TSPAN19", "IRF2BP2", "DDX3X", "CIITA", "IRF4", "CXCR5", "EPHA7", "IL13RA1", "CISH", "SPINK1", "TRAF3", "HIST1H4E", "HIST1H4J", "MAGEC2", "IRX2", "FPGT")
+recurrent.genes <- as.vector(unique(supptable2$gene))
+
+sfig4.genes <- as.vector(unique(c(sig.genes, recurrent.genes)))
+
+# Plotting VAF for MutSigCV 50 genes
+vafPlot <- plotVaf(maf = mutations.maf, genes = sig.genes, vafCol = 'VAF', 
+                   flip = FALSE, top = 50, showN = FALSE)
+
+# plot VAF for top recurrently mutated genes (n=95)
+vafPlot <- plotVaf(maf = mutations.maf, genes = supptable2$gene, vafCol = 'VAF', showN = FALSE)
+
+# Plotting VAF for the union of MutSig and recurrently mutated genes (n=120)
+vafPlot <- plotVaf(maf = mutations.maf, genes = sfig4.genes, vafCol = 'VAF', showN = FALSE, top=123)
+
+# plot VAF for recurrently mutated genes (NOT in MutSig)
+supptable2.not_MutSig <- subset(supptable2, !(supptable2$mutsig == 'y'))
+vafPlot <- plotVaf(maf = mutations.maf, genes = supptable2.not_MutSig$gene, vafCol = 'VAF', showN = FALSE)
+
+```
+
+## Lollipop plots
+
+```{r}
+library(maftools)
+library(gridExtra)
+
+# significant genes only
+mutations.maf <- read.maf("/Volumes/shung/projects/PMBCL_exomes/Mutsig/mutsig_input/mutation_file/maftools/paired_and_unpaired.snvs_and_indels.sig_genes_v3.hugo_gene.AF_filtered.gene_filtered.with_AA_Change.maf")
+
+# ALL mutations *including* UTR mutations (and all genes)
+mutations.maf <- read.maf("/Volumes/shung/projects/PMBCL_exomes/snv_indel_analysis/maf/mutation_summary-paired_and_unpaired_with_UTRs.maf", vc_nonSyn = c("Frame_Shift_Del", "Frame_Shift_Ins", "Splice_Site", "Translation_Start_Site","Nonsense_Mutation", "Nonstop_Mutation", "In_Frame_Del","In_Frame_Ins", "Missense_Mutation", "3'UTR", "5'UTR"))
+
+mutations.maf <- read.maf("/Volumes/shung/projects/PMBCL_exomes/Mutsig/mutsig_input/mutation_file/maftools/paired_and_unpaired.snvs_and_indels.sig_genes_v3.hugo_gene.AF_filtered.gene_filtered+IRF1_AA_Change.maf")
+
+sig.genes <- c("SOCS1", "ITPKB", "STAT6", "GNA13", "NFKBIE", "PTPN1", "ZNF217", "IL4R", "ACTB", "HIST1H3D", "CD58", "IRF8", "SGPP1", "TNFAIP3", "JUNB", "ZFP36L1", "RGS1", "HIST1H2BC", "HIST1H1C", "JAK1", "MS4A1", "SRSF1", "HIST1H1B", "EZH2", "GDF11", "KLF9", "IL1RAPL2", "SERPINB3", "VMP1", "MYC", "LHFPL3", "TSPAN19", "IRF2BP2", "DDX3X", "CIITA", "IRF4", "CXCR5", "EPHA7", "IL13RA1", "CISH", "SPINK1", "TRAF3", "HIST1H4E", "HIST1H4J", "MAGEC2", "IRX2", "FPGT", "ALX1")
+
+oncoclust.genes <- c("IRF4", "STAT6", "EZH2", "HIST1H3D", "ACTB", "BCL7A")
+
+# create grid of lollipop plots for all significant genes
+
+# for each significant gene, create plot
+lolli.plots <- vector('list', length(sig.genes))
+for (i in seq_along(sig.genes)) {
+  lolli.plots[[i]] <- lollipopPlot(maf = mutations.maf, 
+                          gene = sig.genes[i], 
+                          AACol = 'Protein_Change', 
+                          showMutationRate = TRUE, 
+                          domainLabelSize = 2, 
+                          defaultYaxis = FALSE
+                          )
+}
+do.call("grid.arrange", c(lolli.plots, ncol=2))
+
+# Structure for proteins: GCSAM, IFNL3, IGLJ2 not found
+
+# Lollipop plots for amino acid changes - issues with retrieving protein position
+GNA13.lpop <- lollipopPlot(maf = mutations.maf, 
+                          gene = 'GNA13', 
+                          AACol = 'Protein_Change', 
+                          showMutationRate = TRUE, 
+                          domainLabelSize = 3, 
+                          defaultYaxis = FALSE, labelPos = c(27, 67, 68)
+                          )
+
+# lollipop plots for genes of interest: TBL1XR1, genes in the IRF pathway
+
+```
+
+## Oncodrive to detect cancer driver genes based on positional clustering
+
+Oncodrive is based on the algorithm oncodriveCLUST (originally implemented in python).  The main idea is based on the fact that most of the variants in cancer-causing genes are enriched at few specific loci (aka hot-spots).  This method takes advantage of such positions to identify cancer genes.
+
+```{r}
+library(maftools)
+
+# all mutated genes
+mutations.maf <- read.maf("/Volumes/shung/projects/PMBCL_exomes/Mutsig/mutsig_input/mutation_file/maftools/paired_and_unpaired.snvs_and_indels.sig_genes.AA_change.maf")
+
+# significant genes only
+mutations.maf <- read.maf("/Volumes/shung/projects/PMBCL_exomes/Mutsig/mutsig_input/mutation_file/maftools/paired_and_unpaired.snvs_and_indels.sig_genes_v3.hugo_gene.AF_filtered.gene_filtered.with_AA_Change.maf")
+
+laml.sig = oncodrive(maf = mutations.maf, AACol = 'Protein_Change', minMut = 5, pvalMethod = 'zscore')
+
+# plot the results using plotOncodrive
+plotOncodrive(res = laml.sig, fdrCutOff = 0.1, useFraction = TRUE, labelSize = 6)
+
+# the size of the points is proportional to the number of clusters found in the gene
+# x-axis: number of mutations (or fraction of mutations) observed in these clusters
+
+```
+
+
+## Rainfall plot to detect hypermutation
+
+```{r}
+library(maftools)
+library(gridExtra)
+
+mutations.maf <- read.maf("/Volumes/shung/projects/PMBCL_exomes/Mutsig/mutsig_input/mutation_file/singles_and_pairs/singles_and_pairs.snvs_and_indels.somatic_modified_effects.removed_non_genes.singles_AF_filtered.maf",
+                          gisticAllLesionsFile = "/Volumes/shung/projects/PMBCL_exomes/gistic/output/drop_low_coverage-filtered_949-arm_peel-threshold_0.3-fdr_0.05-max_seg_1000-FINAL_FINAL_FINAL/gistic_segments.all_lesions.conf_90.txt", 
+                          gisticAmpGenesFile = "/Volumes/shung/projects/PMBCL_exomes/gistic/output/drop_low_coverage-filtered_949-arm_peel-threshold_0.3-fdr_0.05-max_seg_1000-FINAL_FINAL_FINAL/gistic_segments.amp_genes.conf_90.txt", 
+                          gisticDelGenesFile = "/Volumes/shung/projects/PMBCL_exomes/gistic/output/drop_low_coverage-filtered_949-arm_peel-threshold_0.3-fdr_0.05-max_seg_1000-FINAL_FINAL_FINAL/gistic_segments.del_genes.conf_90.txt",
+                          gisticScoresFile = "/Volumes/shung/projects/PMBCL_exomes/gistic/output/drop_low_coverage-filtered_949-arm_peel-threshold_0.3-fdr_0.05-max_seg_1000-FINAL_FINAL_FINAL/gistic_segments.scores.gistic")
+
+# read in samples that are used as input into gistic (below noisiness threshold of 949)
+samples <- read.table("/Volumes/shung/projects/PMBCL_exomes/gistic/input/samples-pass_949.txt")
+
+# rainfall plot for every sample:
+
+#os.plots <- vector('list', length(genes))
+#for (i in seq_along(genes)) {
+#  os.plots[[i]] <- mafSurvival(maf = mutations.maf, genes = genes[i], clinicalData = clinical.data, addInfo = TRUE, 
+#             time = 'Overall.survival..y.', Status = 'CODE_OS', 
+#             groupNames = c(paste(genes[i],"-Mutated", sep = ""), "WT"))
+#}
+#do.call("grid.arrange", c(os.plots, ncol=2))
+
+results <- rainfallPlot(maf = mutations.maf, tsb = c("PA019", "PA043"),
+                        detectChangePoints = TRUE, 
+                        fontSize = 12, 
+                        pointSize = 0.6)
+
+# Filter column in the above results indicate whether the identified segment passes the definition of “Kataegis” which are defined as those genomic segments containing six or more consecutive mutations with an average inter-mutation distance of less than or equal to 1,00 bp 5.
+
+```
+
+## Mutational signature analysis
+
+```{r}
+library(maftools)
+library(dplyr)
+
+#mutations.df <- read.table("/Volumes/shung/projects/PMBCL_exomes/Mutsig/mutsig_input/mutation_file/singles_and_pairs/singles_and_pairs.snvs_and_indels.somatic_modified_effects.removed_non_genes.singles_AF_filtered.maf", sep = "\t", header = TRUE, fill = TRUE)
+#
+## apply discovery cohort genes to extension cohort
+#cases.paired <- c("PA001", "PA002", "PA003", "PA009", "PA010", "PA011", "PA012", "PA013", "PA014", "PA015", "PA016", "PA017", "PA018", "PA021", "PA034", "PA045", "PA056", "PA069", "PA070", "PA072", "PA073")
+#
+#mutations.paired <- filter(mutations.df, mutations.df$Tumor_Sample_Barcode %in% cases.paired)
+#mutations.unpaired <- filter(mutations.df, !(mutations.df$Tumor_Sample_Barcode %in% cases.paired))
+#
+#genes.paired <- unique(mutations.paired$Hugo_Symbol)
+#mutations.unpaired <- filter(mutations.unpaired, mutations.unpaired$Hugo_Symbol %in% genes.paired)
+#
+#mutations.all <- rbind(mutations.paired, mutations.unpaired)
+#write.table(mutations.all, "/Volumes/shung/projects/PMBCL_exomes/Mutsig/mutsig_input/mutation_file/singles_and_pairs/singles_and_pairs.snvs_and_indels.somatic_modified_effects.removed_non_genes.singles_AF_filtered.discovery_cohort_genes.maf", sep = "\t", row.names = FALSE, quote = FALSE)
+#
+mutations.maf <- read.maf("/Volumes/shung/projects/PMBCL_exomes/Mutsig/mutsig_input/mutation_file/singles_and_pairs/singles_and_pairs.snvs_and_indels.somatic_modified_effects.removed_non_genes.singles_AF_filtered.maf")
+#mutations.maf <- read.maf("/Volumes/shung/projects/PMBCL_exomes/Mutsig/mutsig_input/mutation_file/singles_and_pairs/singles_and_pairs.snvs_and_indels.somatic_modified_effects.removed_non_genes.singles_AF_filtered.discovery_cohort_genes.maf")
+
+# first, extract adjacent bases to the mutated locus and classify them into 96 subsitution classes
+laml.tnm = trinucleotideMatrix(maf = mutations.maf, ref_genome = "~/Documents/references/GRCh37-lite.fa",
+                               ignoreChr = "chr23", useSyn = FALSE)
+
+# extractSignatures uses a non-negative matrix factorization to decompose 92 samples x 96 matrix into r signatures.
+# By default, the function runs NMF on 6 ranks and chooses the best possible value based on maximum cophenetic-correlation coefficients (can also specify r).  Once decomposed, signatures are compared against known signatures derived from Alexandrov et al., and cosine similarity is calculated to identify the best match.
+
+library(NMF)
+laml.sign = extractSignatures(mat = laml.tnm, nTry = 3, plotBestFitRes = FALSE)
+#laml.sign = extractSignatures(mat = laml.tnm, nTry = 20, plotBestFitRes = FALSE)
+
+# Using 3 as a best-fit rank based on decreasing cophenetic correlation coefficient.
+# Comparing against experimentally validated 30 signatures (See http://cancer.sanger.ac.uk/cosmic/signatures)
+# Found Signature_1 most similar to validated Signature_19. Aetiology: Unknown [cosine-similarity: 0.566] 
+# Found Signature_2 most similar to validated Signature_3. Aetiology: defects in DNA-DSB repair by HR [cosine-similarity: 0.665] 
+#Found Signature_3 most similar to validated Signature_3. Aetiology: defects in DNA-DSB repair by HR [cosine-similarity: 0.556] 
+
+plotSignatures(laml.sign)
+plotSignatures(laml.sign, contributions = TRUE)
+
+# look at comparison of similarities of detected signatures against validated signatures
+library(corrplot)
+corrplot::corrplot(corr = laml.sign$coSineSimMat, 
+                   col = RColorBrewer::brewer.pal(n = 9, name = 'Blues'),
+                   is.corr = FALSE, 
+                   tl.cex = 0.6, 
+                   tl.col = 'black', 
+                   cl.cex = 0.6)
+
+# alternatively represent in heatmap form:
+library(pheatmap)
+
+pheatmap::pheatmap(mat = laml.sign$coSineSimMat, cluster_rows = FALSE, main = "cosine similarity against validated signatures")
+
+
+```
+
+## Survival analysis
+
+```{r}
+library(maftools)
+library(gridExtra)
+
+# mutation data for all genes
+mutations.maf <- read.maf("/Volumes/shung/projects/PMBCL_exomes/Mutsig/mutsig_input/mutation_file/singles_and_pairs/singles_and_pairs.snvs_and_indels.somatic_modified_effects.removed_non_genes.singles_AF_filtered.maf")
+
+# mutation data filtered for significant genes and rituximab-treated patients only (!)
+mutations.maf <- read.maf("/Volumes/shung/projects/PMBCL_exomes/Mutsig/mutsig_input/mutation_file/maftools/paired_and_unpaired.snvs_and_indels.sig_genes_v3.hugo_gene.AF_filtered.gene_filtered.with_VAF.RITU_treated.maf")
+
+clinical.data <- read.table("/Volumes/shung/projects/PMBCL_exomes/data/from_DaveTwa/meta_data_DTwa_updated.txt", sep = "\t", header = TRUE)
+
+# TTP: CODE_TTP and "Time to progression (y)"
+# OS: CODE_OS and "Overall survival (y)"
+# PFS: CODE_PFS and "Progression free survival (y)"
+
+genes = c("SOCS1", "ITPKB", "STAT6", "GNA13", "NFKBIE", "PTPN1", "ZNF217", "IL4R", "ACTB", "HIST1H3D", "CD58", "IRF8", "SGPP1", "TNFAIP3", "GCSAM", "JUNB", "ZFP36L1", "RGS1", "HIST1H2BC", "HIST1H1C", "JAK1", "MS4A1", "SRSF1", "HIST1H1B", "EZH2", "IFNL3", "GDF11", "KLF9", "IL1RAPL2", "SERPINB3", "VMP1", "MYC", "LHFPL3", "TSPAN19", "IRF2BP2", "DDX3X", "CIITA", "IRF4", "CXCR5", "EPHA7", "IL13RA1", "CISH", "SPINK1", "TRAF3", "HIST1H4E", "HIST1H4J", "MAGEC2", "IRX2", "FPGT")
+# omitting IGLJ2A
+jak.genes = c("CISH", "IL4R", "IL13RA1", "STAT6", "SOCS1", "PTPN1")
+
+#i<-1
+#genes[1] <- irf.genes
+
+# create grid of plots for OS
+
+# for each significant gene, create survival plot
+os.plots <- vector('list', length(genes))
+for (i in seq_along(genes)) {
+  os.plots[[i]] <- mafSurvival(maf = mutations.maf, 
+                               genes = genes[i], 
+                               clinicalData = clinical.data, 
+                               addInfo = TRUE, 
+                               time = 'Overall.survival..y.', 
+                               Status = 'CODE_OS', 
+                               groupNames = c(paste(genes[i],"-Mutated", sep = ""), "WT"))
+}
+do.call("grid.arrange", c(os.plots, ncol=2))
+
+# create grid of plots for TTP
+
+# for each significant gene, create survival plot
+ttp.plots <- vector('list', length(genes))
+for (i in seq_along(genes)) {
+  ttp.plots[[i]] <- mafSurvival(maf = mutations.maf, 
+                                genes = genes[i], 
+                                clinicalData = clinical.data, 
+                                addInfo = TRUE, 
+                                time = 'Time.to.progression..y.', 
+                                Status = 'CODE_TTP', 
+                                groupNames = c(paste(genes[i],"-Mutated", sep = ""), "WT"))
+}
+do.call("grid.arrange", c(ttp.plots, ncol=2))
+
+# create grid of plots for PFS
+
+# for each significant gene, create survival plot
+pfs.plots <- vector('list', length(genes))
+for (i in seq_along(genes)) {
+  pfs.plots[[i]] <- mafSurvival(maf = mutations.maf, genes = genes[i], clinicalData = clinical.data, addInfo = TRUE, 
+             time = 'Progression.free.survival..y.', Status = 'CODE_PFS', 
+             groupNames = c(paste(genes[i],"-Mutated", sep = ""), "WT"))
+}
+do.call("grid.arrange", c(pfs.plots, ncol=2))
+
+
+# create separate plots where genes exhibit significant differences in survival between MUT and WT
+mafSurvival(maf = mutations.maf, genes = "NFKBIE", clinicalData = clinical.data, 
+                                   addInfo = TRUE, time = 'Overall.survival..y.', Status = 'CODE_OS', 
+                                   groupNames = c("OS: NFKBIE-Mutated", "WT"), showConfInt = FALSE)
+mafSurvival(maf = mutations.maf, genes = "ITPKB", clinicalData = clinical.data, 
+                                   addInfo = TRUE, time = 'Time.to.progression..y.', Status = 'CODE_TTP', 
+                                   groupNames = c("TTP: ITPKB-Mutated", "WT"), showConfInt = FALSE)
+mafSurvival(maf = mutations.maf, genes = "ITPKB", clinicalData = clinical.data, 
+                                   addInfo = TRUE, time = 'Progression.free.survival..y.', Status = 'CODE_PFS', 
+                                   groupNames = c("PFS: ITPKB-Mutated", "WT"), showConfInt = FALSE)
+
+
+#hist1h3d.plots <- vector('list', 3)
+#hist1h3d.plots[[1]] <- mafSurvival(maf = mutations.maf, genes = "HIST1H3D", clinicalData = clinical.data, 
+#                                   addInfo = TRUE, time = 'Overall.survival..y.', Status = 'CODE_OS', 
+#                                   groupNames = c("OS: HIST1H3D-Mutated", "WT"), showConfInt = FALSE)
+#hist1h3d.plots[[2]] <- mafSurvival(maf = mutations.maf, genes = "HIST1H3D", clinicalData = clinical.data, 
+#                                   addInfo = TRUE, time = 'Time.to.progression..y.', Status = 'CODE_TTP', 
+#                                   groupNames = c("TTP: HIST1H3D-Mutated", "WT"), showConfInt = FALSE)
+#hist1h3d.plots[[3]] <- mafSurvival(maf = mutations.maf, genes = "HIST1H3D", clinicalData = clinical.data, 
+#                                   addInfo = TRUE, time = 'Progression.free.survival..y.', Status = 'CODE_PFS',
+#                                   groupNames = c("PFS: HIST1H3D-Mutated", "WT"), showConfInt = FALSE)
+#do.call("grid.arrange", c(hist1h3d.plots, ncol=3))
+
+
+```
+
+## GISTIC visualization
+
+```{r}
+library(devtools)
+install_github("PoisonAlien/maftools")
+library(maftools)
+
+all.lesions <- "/Volumes/shung/projects/PMBCL_exomes/gistic/output/drop_low_coverage-filtered_949-arm_peel-threshold_0.3-fdr_0.05-max_seg_1000-FINAL_FINAL_FINAL/gistic_segments.all_lesions.conf_90.txt"
+amp.genes <- "/Volumes/shung/projects/PMBCL_exomes/gistic/output/drop_low_coverage-filtered_949-arm_peel-threshold_0.3-fdr_0.05-max_seg_1000-FINAL_FINAL_FINAL/gistic_segments.amp_genes.conf_90.txt"
+del.genes <- "/Volumes/shung/projects/PMBCL_exomes/gistic/output/drop_low_coverage-filtered_949-arm_peel-threshold_0.3-fdr_0.05-max_seg_1000-FINAL_FINAL_FINAL/gistic_segments.del_genes.conf_90.txt"
+scores.gistic <- "/Volumes/shung/projects/PMBCL_exomes/gistic/output/drop_low_coverage-filtered_949-arm_peel-threshold_0.3-fdr_0.05-max_seg_1000-FINAL_FINAL_FINAL/gistic_segments.scores.gistic"
+
+#source("/Volumes/shung/projects/PMBCL_exomes/gistic/scripts/gisticChromPlot.R")
+#source("/Volumes/shung/projects/PMBCL_exomes/gistic/scripts/readSegs.R")
+
+laml.gistic <- maftools::readGistic(gisticAllLesionsFile = all.lesions, 
+                          gisticAmpGenesFile = amp.genes, 
+                          gisticDelGenesFile = del.genes, 
+                          gisticScoresFile = scores.gistic)
+# genome plot
+gisticChromPlot(laml.gistic)
+
+# gistic oncoplot
+col <- c("red", "blue")
+names(col) <- c('Amp', 'Del')
+gisticOncoPlot(gistic = laml.gistic, colors = col)
+
+```
+
+## Waterfall plot
+
+```{r}
+# load the GenVisR package
+library("GenVisR")
+set.seed(426)
+
+mutations.plot <- mutations.sig
+colnames(mutations.plot)[c(1,2)]=c("Hugo_Symbol", "Tumor_Sample_Barcode")
+
+waterfall(mutations.plot, 
+          mainRecurCutoff = 0, 
+          mainGrid = TRUE,
+          plotMutBurden = TRUE, 
+          fileType = "MAF", 
+          coverageSpace = 90697072,
+          plot_proportions = TRUE,
+          proportions_type = "TvTi",
+          mainDropMut = TRUE,
+          rmvSilent = TRUE
+          )
+#clinData = gender,
+#mainXlabel = TRUE,
+```
+
+## Analyze IRF mutations
+
+```{r}
+library(maftools)
+library(gridExtra)
+library(dplyr)
+
+# Define the list of genes within the IRF pathway (suggested by Anja + combined with important IRF family members)
+irf.genes <- c("TLR2", "TLR4", "TLR5", "MYD88", "RELA", "NFKB1", "TRAM1", "TICAM1", "TRAF6", "IRAK1", "IRAK4", "JAK2", "STAT1", "BCL6", "CD40", "IRF2BP2", "IRF8", "IRF4", "IRF1")
+irf.genes <- c("IRF2BP2", "IRF8", "IRF4", "IRF1", "IRF3", "IRF7", "IRF9")
+
+mutations <- read.table("/Volumes/shung/projects/PMBCL_exomes/snv_indel_analysis/mutation_summary-paired_and_unpaired.txt", sep = "\t", header = TRUE)
+
+# extract IRF-familiy mutation data
+mutations.irf_family <- unique(rbind(mutations[grep("^IRF", mutations$gene), ]))
+mutations.irf_family$gene <- factor(mutations.irf_family$gene)
+mutations.irf_family$effect <- factor(mutations.irf_family$effect)
+mutations.irf_family.table <- table(mutations.irf_family$gene, mutations.irf_family$effect)
+write.table(mutations.irf_family.table, "/Volumes/shung/projects/PMBCL_exomes/pathway_definitions/IRF/irf.mutation.table.txt", sep = "\t", quote = FALSE)
+
+# extract mutation data for the complete IRF pathway
+mutations.irf_pathway <- mutations[mutations$gene %in% irf.genes, ]
+mutations.irf_pathway$gene <- factor(mutations.irf_pathway$gene)
+mutations.irf_pathway$effect <- factor(mutations.irf_pathway$effect)
+mutations.irf_pathway.table <- t(table(mutations.irf_pathway$gene, mutations.irf_pathway$effect))
+write.table(mutations.irf_pathway, "/Volumes/shung/projects/PMBCL_exomes/pathway_definitions/IRF/mutations.irf_pathway.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+write.table(mutations.irf_pathway.table, "/Volumes/shung/projects/PMBCL_exomes/pathway_definitions/IRF/mutations.irf_pathway.table.txt", sep = "\t", quote = FALSE)
+
+# remove genes that are not mutated (not including UTR mutations)
+irf.genes.not_mutated <- c("MYD88", "RELA", "TRAM1", "TICAM1", "IRAK1", "CD40")
+irf.genes <- irf.genes[ !irf.genes %in% irf.genes.not_mutated ]
+
+# read in MAF files to plot IRF-specific oncoplot and lollipop plots
+mutations.maf <- read.maf("/Volumes/shung/projects/PMBCL_exomes/snv_indel_analysis/maf/mutation_summary-paired_and_unpaired_with_UTRs.maf")
+
+lolli.plots <- vector('list', length(irf.genes))
+for (i in seq_along(irf.genes)) {
+  lolli.plots[[i]] <- lollipopPlot(maf = mutations.maf, 
+                          gene = irf.genes[i], 
+                          AACol = 'Protein_Change', 
+                          showMutationRate = TRUE, 
+                          domainLabelSize = 2, 
+                          defaultYaxis = FALSE
+                          )
+}
+do.call("grid.arrange", c(lolli.plots, ncol=1))
+
+```
+
