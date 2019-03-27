@@ -31,6 +31,33 @@ library(dplyr)
 library(plyr)
 ```
 
+## Shape data to get frequently mutated EBV+ and EBV- cases.
+
+```{r}
+cases.mutated.ebv_status <- read.table("/Volumes/shung/projects/gzl_exomes/data/EBV_status_mutated_cases.oncoplot.txt", sep = "\t", header = TRUE)
+
+counts.mutated.ebv_status <- as.data.frame(table(cases.mutated.ebv_status$EBER, cases.mutated.ebv_status$Hugo_Symbol))
+colnames(counts.mutated.ebv_status) <- c("EBV_status", "gene", "num_mutated")
+counts.mutated.ebv_status.POS <- subset(counts.mutated.ebv_status, counts.mutated.ebv_status$EBV_status == "Positive" & counts.mutated.ebv_status$num_mutated > 0)
+counts.mutated.ebv_status.NEG <- subset(counts.mutated.ebv_status, counts.mutated.ebv_status$EBV_status == "Negative" & counts.mutated.ebv_status$num_mutated > 0)
+
+# calculate proportion (% cases mutated) (22 cases are EBV-, 7 cases are EBV+)
+counts.mutated.ebv_status.POS$proportion <- counts.mutated.ebv_status.POS$num_mutated / 7 * 100
+counts.mutated.ebv_status.NEG$proportion <- counts.mutated.ebv_status.NEG$num_mutated / 22 * 100
+
+# get subset of genes that are mutated in 30% of each of the EBV groups
+counts.mutated.ebv_status.NEG.cutoff <- subset(counts.mutated.ebv_status.NEG, counts.mutated.ebv_status.NEG$proportion >= 10)
+counts.mutated.ebv_status.POS.cutoff <- subset(counts.mutated.ebv_status.POS, counts.mutated.ebv_status.POS$proportion >= 10)
+EBV_genes.10_plus <- unique(c(as.vector(counts.mutated.ebv_status.NEG.cutoff$gene), 
+                              as.vector(counts.mutated.ebv_status.POS.cutoff$gene)))
+
+counts.mutated.ebv_status.NEG.cutoff <- subset(counts.mutated.ebv_status.NEG, counts.mutated.ebv_status.NEG$proportion >= 20)
+counts.mutated.ebv_status.POS.cutoff <- subset(counts.mutated.ebv_status.POS, counts.mutated.ebv_status.POS$proportion >= 20)
+EBV_genes.20_plus <- unique(c(as.vector(counts.mutated.ebv_status.NEG.cutoff$gene), 
+                              as.vector(counts.mutated.ebv_status.POS.cutoff$gene)))
+
+```
+
 ## Oncoplots
 
 ```{r}
@@ -111,13 +138,14 @@ oncoplot(maf = mutations.maf, genes = genes.target$gene,
          showTumorSampleBarcodes = TRUE,
          annotationColor = annot.colors)
 
-# order by path group
+# order by path group (in specific order)
 oncoplot(maf = mutations.maf, genes = genes.target$gene, 
          clinicalFeatures = c("Path_group", "Mediastinal", "EBER", "Gender", "Age_yrs"),
          drawColBar = FALSE, 
          legendFontSize = 12, 
          showTumorSampleBarcodes = TRUE,
-         annotationColor = annot.colors, sortByAnnotation = TRUE)
+         annotationColor = annot.colors, sortByAnnotation = TRUE, 
+         annotationOrder = c("0_=_cHL", "1_=_cHL-interm", "2_=_LBCL-interm", "3_=_LBCL"))
 
 # order by EBV-status
 oncoplot(maf = mutations.maf, genes = genes.target$gene, 
@@ -126,6 +154,30 @@ oncoplot(maf = mutations.maf, genes = genes.target$gene,
          legendFontSize = 12, 
          showTumorSampleBarcodes = TRUE,
          annotationColor = annot.colors, sortByAnnotation = TRUE)
+
+# show only genes mutated in EBV+ patients
+oncoplot(maf = mutations.maf, genes = c("ACTB", "ATP13A4", "DHX58", "STAT3"), 
+         clinicalFeatures = c("EBER", "Path_group", "Mediastinal", "Gender", "Age_yrs"),
+         drawColBar = FALSE, 
+         legendFontSize = 12, 
+         showTumorSampleBarcodes = TRUE,
+         annotationColor = annot.colors, sortByAnnotation = TRUE, removeNonMutated = FALSE)
+
+# show genes mutated in 10%+ of each EBV category
+oncoplot(maf = mutations.maf, genes = EBV_genes.10_plus, 
+         clinicalFeatures = c("EBER", "Path_group", "Mediastinal", "Gender", "Age_yrs"),
+         drawColBar = FALSE, 
+         legendFontSize = 12, 
+         showTumorSampleBarcodes = TRUE,
+         annotationColor = annot.colors, sortByAnnotation = TRUE)
+
+# show genes mutated in 20%+ of each EBV category
+oncoplot(maf = mutations.maf, genes = EBV_genes.20_plus, 
+         clinicalFeatures = c("EBER", "Path_group", "Mediastinal", "Gender", "Age_yrs"),
+         drawColBar = FALSE, 
+         legendFontSize = 12, 
+         showTumorSampleBarcodes = TRUE,
+         annotationColor = annot.colors, sortByAnnotation = TRUE, removeNonMutated = FALSE)
 
 ```
 
