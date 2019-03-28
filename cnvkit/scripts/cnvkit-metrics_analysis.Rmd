@@ -1,0 +1,95 @@
+---
+title: "Assessing performance of CNVkit and CopywriteR against benchmark"
+author: "Stacy Hung"
+date: "March 19, 2018"
+output: html_document
+---
+
+This script reads in metrics / QC data generated from the metrics module of CNVkit. The noisiness values are analyzed to estimate a cutoff for failing samples.
+
+## Reading in calls
+
+```{r}
+
+metrics <- read.table("/Volumes/shung/projects/gzl_exomes/cnvkit/metrics/cnvkit_metrics.all.txt", sep = "\t", header = TRUE)
+
+# calculate qc metric (segments X bivariance)
+metrics$qc <- metrics$segments*metrics$bivar
+
+# basic stats for noisiness:
+
+# average noisiness
+mean.noise <- mean(metrics$qc)
+
+# standard deviation of noisiness
+sd.noise <- sd(metrics$qc)
+
+# noisiness value that is 2 sd away from the mean
+cutoff.noise <- mean.noise + 2*sd.noise
+
+# noisiness value that is 1 sd away from the mean
+#cutoff.noise.gistic <- mean.noise + sd.noise
+
+# define samples that meet cutoff
+metrics.pass <- subset(metrics, metrics$qc < cutoff.noise)
+
+```
+
+## Visualize data
+
+```{r}
+
+library(ggplot2)
+
+# plot the distribution of the "noisiness" value
+plot <- ggplot(metrics, aes(as.numeric(qc))) + 
+  geom_density() + 
+  xlab ("Noisiness value") + 
+  ylab("Density") +
+  ggtitle("Distribution of noisiness value for CN calling across all GZL samples")
+
+# distribution with cutoff for noise
+plot + geom_vline(xintercept = cutoff.noise, linetype = "dashed", color = "red", size = 0.5)
+
+```
+
+```{r}
+## addNewData ##
+
+##' Modifies 'data' by adding new values supplied in newDataFileName
+##'
+##' newDataFileName is expected to have columns 
+##' c(lookupVariable,lookupValue,newVariable,newValue,source)
+##' 
+##' Within the column 'newVariable', replace values that
+##' match 'lookupValue' within column 'lookupVariable' with the value
+##' newValue'.  If 'lookupVariable' is NA, then replace *all* elements
+##' of 'newVariable' with the value 'newValue'.
+##'
+##' Note that lookupVariable can be the same as newVariable.
+##'
+##' @param newDataFileName name of lookup table
+##' @param data existing data.frame
+##' @param allowedVars vector of permissible variable names for newVariable
+##' @return modified data.frame
+addNewData <- function(newDataFileName, data, allowedVars){
+
+  import <- readNewData(newDataFileName, allowedVars)
+
+  if( !is.null(import)){    
+    for(i in seq_len(nrow(import))){  #Make replacements
+      col.to <- import$newVariable[i] 
+      col.from <- import$lookupVariable[i]
+      if(is.na(col.from)){ # apply to whole column
+        data[col.to] <- import$newValue[i]
+      } else { # apply to subset
+        rows <- data[[col.from]] == import$lookupValue[i]
+        data[rows,col.to] <- import$newValue[i]
+      }
+    }   
+  }      
+  data
+}
+```
+
+
