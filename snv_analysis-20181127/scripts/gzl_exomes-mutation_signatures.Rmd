@@ -1,0 +1,105 @@
+---
+title: "SNV Heatmap"
+author: "Stacy Hung"
+date: "March 26, 2019"
+output: html_document
+---
+  
+This script analyses mutational signatures in the GZL exome dataset
+  
+
+## Load libraries
+
+```{r}
+library(maftools)
+library(dplyr)
+```
+
+## Generation of datasets
+
+```{r}
+
+# get mutations for EBV+ (1) and EBV- (0) cases
+# read in mutations for full cohort (filtered based on normal SNP exclusion, failures removed, UTR mutations omitted)
+mutations.df <- read.table( "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.eber_status.maf", sep = "\t", header = TRUE, fill = TRUE)
+
+mutations.EBER_pos <- filter(mutations.df, mutations.df$EBER_status == 1)
+mutations.EBER_neg <- filter(mutations.df, mutations.df$EBER_status == 0)
+
+write.table(mutations.EBER_pos, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.oncoplot.genes.ordered.EBER_pos.maf", sep = "\t", quote = FALSE, row.names = FALSE)
+write.table(mutations.EBER_neg, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.oncoplot.genes.ordered.EBER_neg.maf", sep = "\t", quote = FALSE, row.names = FALSE)
+```
+
+
+## Mutational signature analysis
+
+```{r}
+mutations.EBER_pos.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.oncoplot.genes.ordered.EBER_pos.maf")
+
+# first, extract adjacent bases to the mutated locus and classify them into 96 subsitution classes
+laml.tnm.EBER_pos = trinucleotideMatrix(maf = mutations.EBER_pos.maf, ref_genome = "~/Documents/references/GRCh37-lite.fa",
+                               ignoreChr = "chr23", useSyn = FALSE)
+
+# extractSignatures uses a non-negative matrix factorization to decompose m samples x 96 matrix into r signatures.
+# By default, the function runs NMF on 6 ranks and chooses the best possible value based on maximum cophenetic-correlation coefficients (can also specify r).  Once decomposed, signatures are compared against known signatures derived from Alexandrov et al., and cosine similarity is calculated to identify the best match.
+
+laml.sign.EBER_pos = extractSignatures(mat = laml.tnm.EBER_pos, nTry = 6, plotBestFitRes = FALSE)
+#laml.sign = extractSignatures(mat = laml.tnm, nTry = 20, plotBestFitRes = FALSE)
+
+plotSignatures(laml.sign.EBER_pos)
+plotSignatures(laml.sign.EBER_pos, contributions = TRUE)
+
+#Using 3 as a best-fit rank based on decreasing cophenetic correlation coefficient.
+#Comparing against experimentally validated 30 signatures.. (See http://cancer.sanger.ac.uk/cosmic/signatures for details.)
+#Found Signature_1 most similar to validated Signature_1. Aetiology: spontaneous deamination of 5-methylcytosine [cosine-similarity: 0.782] 
+#Found Signature_2 most similar to validated Signature_1. Aetiology: spontaneous deamination of 5-methylcytosine [cosine-similarity: 0.676] 
+#Found Signature_3 most similar to validated Signature_6. Aetiology: defective DNA mismatch repair [cosine-similarity: 0.789] 
+
+mutations.EBER_neg.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.oncoplot.genes.ordered.EBER_neg.maf")
+
+# first, extract adjacent bases to the mutated locus and classify them into 96 subsitution classes
+laml.tnm.EBER_neg = trinucleotideMatrix(maf = mutations.EBER_neg.maf, ref_genome = "~/Documents/references/GRCh37-lite.fa",
+                               ignoreChr = "chr23", useSyn = FALSE)
+
+# extractSignatures uses a non-negative matrix factorization to decompose m samples x 96 matrix into r signatures.
+# By default, the function runs NMF on 6 ranks and chooses the best possible value based on maximum cophenetic-correlation coefficients (can also specify r).  Once decomposed, signatures are compared against known signatures derived from Alexandrov et al., and cosine similarity is calculated to identify the best match.
+
+laml.sign.EBER_neg = extractSignatures(mat = laml.tnm.EBER_neg, nTry = 6, plotBestFitRes = TRUE)
+#laml.sign = extractSignatures(mat = laml.tnm, nTry = 20, plotBestFitRes = FALSE)
+
+plotSignatures(laml.sign.EBER_neg)
+plotSignatures(laml.sign.EBER_neg, contributions = TRUE)
+
+#Using 3 as a best-fit rank based on decreasing cophenetic correlation coefficient.
+#Comparing against experimentally validated 30 signatures.. (See http://cancer.sanger.ac.uk/cosmic/signatures for details.)
+#Found Signature_1 most similar to validated Signature_1. Aetiology: spontaneous deamination of 5-methylcytosine [cosine-similarity: 0.926] 
+#Found Signature_2 most similar to validated Signature_30. Aetiology: Unknown [cosine-similarity: 0.699] 
+#Found Signature_3 most similar to validated Signature_5. Aetiology: Unknown [cosine-similarity: 0.669] 
+
+### All mutations
+
+mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.eber_status.maf")
+
+laml.tnm = trinucleotideMatrix(maf = mutations.maf, ref_genome = "~/Documents/references/GRCh37-lite.fa",
+                               ignoreChr = "chr23", useSyn = FALSE)
+
+laml.sign = extractSignatures(mat = laml.tnm, nTry = 6, plotBestFitRes = FALSE)
+
+plotSignatures(laml.sign)
+plotSignatures(laml.sign, contributions = TRUE)
+
+
+# look at comparison of similarities of detected signatures against validated signatures
+library(corrplot)
+corrplot::corrplot(corr = laml.sign$coSineSimMat, 
+                   col = RColorBrewer::brewer.pal(n = 9, name = 'Blues'),
+                   is.corr = FALSE, 
+                   tl.cex = 0.6, 
+                   tl.col = 'black', 
+                   cl.cex = 0.6)
+
+# alternatively represent in heatmap form:
+library(pheatmap)
+
+pheatmap::pheatmap(mat = laml.sign$coSineSimMat, cluster_rows = FALSE, main = "cosine similarity against validated signatures")
+```
