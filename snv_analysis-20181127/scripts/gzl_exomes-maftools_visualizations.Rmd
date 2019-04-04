@@ -225,7 +225,7 @@ patients.ordered <- c("GZ-062", "GZ-267", "GZ-068", "GZ-086", "GZ-230", "GZ-092"
 oncoplot(maf = mutations.maf, 
          sampleOrder = patients.ordered,
          genes = genes.ordered, 
-         keepGeneOrder = TRUE, fontSize = 0.6, titleFontSize = 0,
+         keepGeneOrder = TRUE, fontSize = 0.6, titleFontSize = 0, legendFontSize = 1, annotationFontSize = 1,
          clinicalFeatures = c("EBER", "Path_group", "Mediastinal", "Gender", "Age_yrs"),
          annotationColor = annot.colors, 
          showTumorSampleBarcodes = TRUE, 
