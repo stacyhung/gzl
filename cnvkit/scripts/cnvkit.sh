@@ -4,6 +4,15 @@
 # Date: March 11, 2019
 # Author: Stacy Hung <shung@bccrc.ca>
 
+## Notes about the data:
+
+# - All samples, including "failures" GZ222 and GZ229, have been considered for analysis
+# - The pooled normal reference is based on all LMD normals, except for GZ180 (FFPE tumor sample), which is compared against a pooled constitutional normal and its own matched constitutional normal
+# - Calls are made using estimated tumor content (based on peak VAF X 2)
+
+###
+
+
 cd /Volumes/shung/projects/gzl_exomes/cnvkit
 
 # Step 1. Create BED files for targets and "antitargets"
@@ -138,8 +147,6 @@ cnvkit heatmap cns/*cns
 cnvkit heatmap cns/*cns -d
 
 # Step 10. Export into file formats that can be used by other programs
-cnvkit export seg call/cnvkit_default_thresholds_drop_low_coverage_cns/*cns -o igv/all_samples.seg
-cnvkit export seg call/with_tumor_content/*cns -o igv/all_samples.tumor_purity.calls.seg
-cnvkit export seg call/with_tumor_content_est_recurrent_genes/*cns -o igv/all_samples.tumor_purity.est_recurrent_genes.calls.seg
+cnvkit export seg call/*cns -o igv/all_samples.seg
 
 
