@@ -31,6 +31,59 @@ library(dplyr)
 library(plyr)
 ```
 
+## Shape data to get frequently mutated (e.g. 10%+) based on pathological group
+```{r}
+library(dplyr)
+
+cases.mutated.pathgp <- read.table("/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/patient_gene_path_group.txt", sep = "\t", header = TRUE)
+
+# get numbers of patients in each group
+patients.group0 <- subset(cases.mutated.pathgp, cases.mutated.pathgp$Path_group == "0 = cHL")
+NUM_GROUP0 <- length(unique(patients.group0$Tumor_Sample_Barcode))
+patients.group1_2 <- subset(cases.mutated.pathgp, cases.mutated.pathgp$Path_group == "1 = cHL-interm" | cases.mutated.pathgp$Path_group == "2 = LBCL-interm")
+NUM_GROUP1_2 <- length(unique(patients.group1_2$Tumor_Sample_Barcode))
+patients.group3 <- subset(cases.mutated.pathgp, cases.mutated.pathgp$Path_group == "3 = LBCL")
+NUM_GROUP3 <- length(unique(patients.group3$Tumor_Sample_Barcode))
+
+counts.mutated.pathgp <- as.data.frame(table(cases.mutated.pathgp$Path_group, cases.mutated.pathgp$Hugo_Symbol))
+colnames(counts.mutated.pathgp) <- c("Path_group", "gene", "num_mutated")
+
+# extract genes that are mutated and specific to pathological groups that need to be filtered
+counts.mutated.pathgp.0 <- subset(counts.mutated.pathgp, 
+                                  counts.mutated.pathgp$Path_group == "0 = cHL" &
+                                    counts.mutated.pathgp$num_mutated > 0)
+counts.mutated.pathgp.1_2 <- subset(counts.mutated.pathgp, 
+                                    (counts.mutated.pathgp$Path_group == "1 = cHL-interm" | 
+                                       counts.mutated.pathgp$Path_group == "2 = LBCL-interm") &
+                                      counts.mutated.pathgp$num_mutated > 0)
+counts.mutated.pathgp.3 <- subset(counts.mutated.pathgp,
+                                  counts.mutated.pathgp$Path_group == "3 = LBCL" &
+                                   counts.mutated.pathgp$num_mutated > 0)
+
+# calculate proportion of mutated cases
+counts.mutated.pathgp.0$proportion <- counts.mutated.pathgp.0$num_mutated / NUM_GROUP0*100
+counts.mutated.pathgp.1_2$proportion <- counts.mutated.pathgp.1_2$num_mutated / NUM_GROUP1_2*100
+
+PERCENT_MUTATED = 10
+
+# now get subset of genes that are mutated in 10% or higher for each group
+counts.mutated.pathgp.0_cutoff <- subset(counts.mutated.pathgp.0, counts.mutated.pathgp.0$proportion >= PERCENT_MUTATED)
+counts.mutated.pathgp.1_2_cutoff <- subset(counts.mutated.pathgp.1_2, counts.mutated.pathgp.1_2$proportion >= PERCENT_MUTATED)
+pathgp_genes.10_plus <- unique(c(as.vector(counts.mutated.pathgp.0_cutoff$gene),as.vector(counts.mutated.pathgp.1_2_cutoff$gene),
+                                 as.vector(counts.mutated.pathgp.3$gene)))
+
+write.table(pathgp_genes.10_plus, "/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/pathgp_genes.10_plus.txt", quote = FALSE, row.names = FALSE)
+
+# create mutation matrix for filtered gene list
+mutations.df <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.oncoplot.maf", sep = "\t", header = TRUE, fill = TRUE)
+mutations.df <- filter(mutations.df, mutations.df$Hugo_Symbol %in% pathgp_genes.10_plus)
+mutations.df$Hugo_Symbol <- factor(mutations.df$Hugo_Symbol)
+mutations.df <- unique(mutations.df[c("Hugo_Symbol", "Tumor_Sample_Barcode")])
+mutation.matrix <- table(mutations.df$Tumor_Sample_Barcode, mutations.df$Hugo_Symbol)
+write.table(mutation.matrix, "/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/mutation_matrix-path_groups_10+_freq_mutated.txt", sep = "\t", quote = FALSE)
+```
+
+
 ## Shape data to get frequently (e.g. 10%+) mutated EBV+ and EBV- cases.
 
 ```{r}
@@ -232,6 +285,51 @@ oncoplot(maf = mutations.maf,
          drawColBar = FALSE)
 
   #legendFontSize = 1, 
+
+```
+
+## Path group-specific oncoplots
+
+```{r}
+# to get latest version of maftools, install from github
+library("devtools")
+install_github(repo = "PoisonAlien/maftools")
+library(maftools)
+
+clinical.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/GZ_WES_cases-clinical_data.mapped.txt", sep = "\t", header = TRUE)
+
+mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.oncoplot.maf", clinicalData = clinical.data)
+
+# plot by EBV+ and EBV- sorted cohorts
+# list of genes that are mutated in at least 10% of EBV+ and EBV- cases, sorted by gene
+genes.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/genes.ordered.txt", header = TRUE)
+genes.ordered <- as.vector(genes.ordered$gene)
+
+patients.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/patients.ordered.txt", header = TRUE)
+patients.ordered <- as.vector(patients.ordered$patient)
+
+# colours for annotation tracks
+annot.colors <- list(Gender = c("Female" = "palevioletred1", "Male" = "royalblue1"),
+                     EBER = c("Negative" = "black", "Positive" = "red"),
+                     Mediastinal = c("Not_involved" = "grey", "Involved" = "mediumpurple"),
+                     Age_yrs = c("<_45" = "bisque", ">=_45" = "bisque4"),
+                     Path_group = c("0_=_cHL" = "lightsalmon",
+                                   "1_=_cHL-interm" = "khaki1",
+                                   "2_=_LBCL-interm" = "lightgreen", 
+                                   "3_=_LBCL" = "steelblue1")
+               )
+
+oncoplot(maf = mutations.maf, 
+         sampleOrder = patients.ordered,
+         genes = genes.ordered, 
+         keepGeneOrder = TRUE, fontSize = 0.6, titleFontSize = 0, legendFontSize = 1, annotationFontSize = 1,
+         clinicalFeatures = c("Path_group", "EBER", "Mediastinal", "Gender", "Age_yrs"),
+         annotationColor = annot.colors, 
+         showTumorSampleBarcodes = TRUE, 
+         drawColBar = FALSE, removeNonMutated = FALSE)
+
+  #legendFontSize = 1, 
+
 
 ```
 
