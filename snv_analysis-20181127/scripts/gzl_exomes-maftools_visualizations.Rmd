@@ -5,7 +5,7 @@ date: "March 26, 2019"
 output: html_document
 ---
 
-This script is used to generate plots for visualizing mutation data for the PMBCL exomes dataset.
+This script is used to generate plots for visualizing mutation data for the GZL exomes dataset.
 
 ## Load packages
 
@@ -31,10 +31,10 @@ library(dplyr)
 library(plyr)
 ```
 
-## Shape data to get frequently mutated EBV+ and EBV- cases.
+## Shape data to get frequently (e.g. 10%+) mutated EBV+ and EBV- cases.
 
 ```{r}
-cases.mutated.ebv_status <- read.table("/Volumes/shung/projects/gzl_exomes/data/EBV_status_mutated_cases.oncoplot.txt", sep = "\t", header = TRUE)
+cases.mutated.ebv_status <- read.table("/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/EBV_status_mutated_cases.oncoplot.txt", sep = "\t", header = TRUE)
 
 counts.mutated.ebv_status <- as.data.frame(table(cases.mutated.ebv_status$EBER, cases.mutated.ebv_status$Hugo_Symbol))
 colnames(counts.mutated.ebv_status) <- c("EBV_status", "gene", "num_mutated")
@@ -45,30 +45,28 @@ counts.mutated.ebv_status.NEG <- subset(counts.mutated.ebv_status, counts.mutate
 counts.mutated.ebv_status.POS$proportion <- counts.mutated.ebv_status.POS$num_mutated / 7 * 100
 counts.mutated.ebv_status.NEG$proportion <- counts.mutated.ebv_status.NEG$num_mutated / 22 * 100
 
-# get subset of genes that are mutated in 30% of each of the EBV groups
-counts.mutated.ebv_status.NEG.cutoff <- subset(counts.mutated.ebv_status.NEG, counts.mutated.ebv_status.NEG$proportion >= 10)
-counts.mutated.ebv_status.POS.cutoff <- subset(counts.mutated.ebv_status.POS, counts.mutated.ebv_status.POS$proportion >= 10)
+# get subset of genes that are mutated in a given % of each of the EBV groups
+PERCENT_MUTATED = 10
+#PERCENT_MUTATED = 20
+counts.mutated.ebv_status.NEG.cutoff <- subset(counts.mutated.ebv_status.NEG, counts.mutated.ebv_status.NEG$proportion >= PERCENT_MUTATED)
+counts.mutated.ebv_status.POS.cutoff <- subset(counts.mutated.ebv_status.POS, counts.mutated.ebv_status.POS$proportion >= PERCENT_MUTATED)
 EBV_genes.10_plus <- unique(c(as.vector(counts.mutated.ebv_status.NEG.cutoff$gene), 
                               as.vector(counts.mutated.ebv_status.POS.cutoff$gene)))
+#EBV_genes.20_plus <- unique(c(as.vector(counts.mutated.ebv_status.NEG.cutoff$gene),       as.vector(counts.mutated.ebv_status.POS.cutoff$gene)))
 
-counts.mutated.ebv_status.NEG.cutoff <- subset(counts.mutated.ebv_status.NEG, counts.mutated.ebv_status.NEG$proportion >= 20)
-counts.mutated.ebv_status.POS.cutoff <- subset(counts.mutated.ebv_status.POS, counts.mutated.ebv_status.POS$proportion >= 20)
-EBV_genes.20_plus <- unique(c(as.vector(counts.mutated.ebv_status.NEG.cutoff$gene), 
-                              as.vector(counts.mutated.ebv_status.POS.cutoff$gene)))
+# create EBV-filtered dataset (mutated in 10%+ for each subgroup)
+mutations.df <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.oncoplot.maf", sep = "\t", header = TRUE, fill = TRUE)
+mutations.df <- filter(mutations.df, mutations.df$Hugo_Symbol %in% EBV_genes.10_plus)
+mutations.df$Hugo_Symbol <- factor(mutations.df$Hugo_Symbol)
+mutations.df <- unique(mutations.df[c("Hugo_Symbol", "Tumor_Sample_Barcode")])
+mutation.matrix <- table(mutations.df$Tumor_Sample_Barcode, mutations.df$Hugo_Symbol)
+#write.table(mutation.matrix, "/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/mutation_matrix-EBV_10+_freq_mutated.txt", sep = "\t", quote = FALSE)
 
 ```
 
-## Oncoplots
+## One time: Process maf file so that sample ids are consistent and genes to display are those of interest (in target panel)
 
 ```{r}
-
-# load genes to display for oncoplot
-genes.target <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/WES_data/target_genes.FINAL_217.txt", header = FALSE)
-colnames(genes.target) <- c("gene")
-
-# load metadata
-clinical.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/GZ_WES_cases-clinical_data.mapped.txt", sep = "\t", header = TRUE)
-
 # read in mutations
 mutations <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.maf", sep = "\t", header = TRUE, fill = TRUE)
 # filter for genes of interest
@@ -117,7 +115,20 @@ mutations$Tumor_Sample_Barcode <- revalue(mutations$Tumor_Sample_Barcode,
 
 #write.table(mutations, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.oncoplot.maf", sep = "\t", row.names = FALSE, quote = FALSE)
 
-mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.oncoplot.maf", clinicalData = clinical.data)
+```
+
+## Oncoplots
+
+```{r}
+# load genes to display for oncoplot
+genes.target <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/WES_data/target_genes.FINAL_217.txt", header = FALSE)
+colnames(genes.target) <- c("gene")
+genes.target <- as.vector(genes.target$gene)
+
+# load metadata
+clinical.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/GZ_WES_cases-clinical_data.mapped.txt", sep = "\t", header = TRUE)
+
+mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.oncoplot.genes.ordered.maf", clinicalData = clinical.data)
 
 # colours for annotation tracks
 annot.colors <- list(Gender = c("Female" = "palevioletred1", "Male" = "royalblue1"),
@@ -179,6 +190,57 @@ oncoplot(maf = mutations.maf, genes = EBV_genes.20_plus,
          showTumorSampleBarcodes = TRUE,
          annotationColor = annot.colors, sortByAnnotation = TRUE, removeNonMutated = FALSE)
 
+```
+
+## EBV-specific oncoplots
+
+```{r}
+# to get latest version of maftools, install from github
+library("devtools")
+install_github(repo = "PoisonAlien/maftools")
+library(maftools)
+
+clinical.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/GZ_WES_cases-clinical_data.mapped.txt", sep = "\t", header = TRUE)
+
+mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.oncoplot.genes.ordered.maf", clinicalData = clinical.data)
+
+# plot by EBV+ and EBV- sorted cohorts
+# list of genes that are mutated in at least 10% of EBV+ and EBV- cases, sorted by gene
+genes.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/oncoplot-genes-ordered_by_ebv_ebv+_ebv_neg.txt", header = TRUE)
+genes.ordered <- as.vector(genes.ordered$gene)
+
+# colours for annotation tracks
+annot.colors <- list(Gender = c("Female" = "palevioletred1", "Male" = "royalblue1"),
+                     EBER = c("Negative" = "black", "Positive" = "red"),
+                     Mediastinal = c("Not_involved" = "grey", "Involved" = "mediumpurple"),
+                     Age_yrs = c("<_45" = "bisque", ">=_45" = "bisque4"),
+                     Path_group = c("0_=_cHL" = "lightsalmon",
+                                   "1_=_cHL-interm" = "khaki1",
+                                   "2_=_LBCL-interm" = "lightgreen", 
+                                   "3_=_LBCL" = "steelblue1")
+               )
+
+patients.ordered <- c("GZ-062", "GZ-267", "GZ-068", "GZ-086", "GZ-230", "GZ-092", "GZ-BCC-054", "GZ-116", "GZ-099", "GZ-BCC-020", "GZ-310", "GZ-149", "GZ-044", "GZ-184", "GZ-046", "GZ-178", "GZ-BCC-013", "GZ-176", "GZ-095", "GZ-152", "GZ-048", "GZ-180", "GZ-BCC-008", "GZ-301", "GZ-032", "GZ-294", "GZ-064", "GZ-197", "GZ-235")
+
+oncoplot(maf = mutations.maf, 
+         sampleOrder = patients.ordered,
+         genes = genes.ordered, 
+         keepGeneOrder = TRUE, fontSize = 0.6, titleFontSize = 0,
+         clinicalFeatures = c("EBER", "Path_group", "Mediastinal", "Gender", "Age_yrs"),
+         annotationColor = annot.colors, 
+         showTumorSampleBarcodes = TRUE, 
+         drawColBar = FALSE)
+
+  #legendFontSize = 1, 
+
+```
+
+## Customized oncoprint so that we can specify the order of BOTH genes and patients
+
+```{r}
+library(ComplexHeatmap)
+
+mutations.df <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.oncoplot.genes.ordered.maf", sep = "\t", header = TRUE, fill = TRUE)
 ```
 
 ## Somatic interactions
@@ -345,66 +407,6 @@ results <- rainfallPlot(maf = mutations.maf, tsb = c("PA019", "PA043"),
                         pointSize = 0.6)
 
 # Filter column in the above results indicate whether the identified segment passes the definition of “Kataegis” which are defined as those genomic segments containing six or more consecutive mutations with an average inter-mutation distance of less than or equal to 1,00 bp 5.
-
-```
-
-## Mutational signature analysis
-
-```{r}
-library(maftools)
-library(dplyr)
-
-#mutations.df <- read.table("/Volumes/shung/projects/PMBCL_exomes/Mutsig/mutsig_input/mutation_file/singles_and_pairs/singles_and_pairs.snvs_and_indels.somatic_modified_effects.removed_non_genes.singles_AF_filtered.maf", sep = "\t", header = TRUE, fill = TRUE)
-#
-## apply discovery cohort genes to extension cohort
-#cases.paired <- c("PA001", "PA002", "PA003", "PA009", "PA010", "PA011", "PA012", "PA013", "PA014", "PA015", "PA016", "PA017", "PA018", "PA021", "PA034", "PA045", "PA056", "PA069", "PA070", "PA072", "PA073")
-#
-#mutations.paired <- filter(mutations.df, mutations.df$Tumor_Sample_Barcode %in% cases.paired)
-#mutations.unpaired <- filter(mutations.df, !(mutations.df$Tumor_Sample_Barcode %in% cases.paired))
-#
-#genes.paired <- unique(mutations.paired$Hugo_Symbol)
-#mutations.unpaired <- filter(mutations.unpaired, mutations.unpaired$Hugo_Symbol %in% genes.paired)
-#
-#mutations.all <- rbind(mutations.paired, mutations.unpaired)
-#write.table(mutations.all, "/Volumes/shung/projects/PMBCL_exomes/Mutsig/mutsig_input/mutation_file/singles_and_pairs/singles_and_pairs.snvs_and_indels.somatic_modified_effects.removed_non_genes.singles_AF_filtered.discovery_cohort_genes.maf", sep = "\t", row.names = FALSE, quote = FALSE)
-#
-mutations.maf <- read.maf("/Volumes/shung/projects/PMBCL_exomes/Mutsig/mutsig_input/mutation_file/singles_and_pairs/singles_and_pairs.snvs_and_indels.somatic_modified_effects.removed_non_genes.singles_AF_filtered.maf")
-#mutations.maf <- read.maf("/Volumes/shung/projects/PMBCL_exomes/Mutsig/mutsig_input/mutation_file/singles_and_pairs/singles_and_pairs.snvs_and_indels.somatic_modified_effects.removed_non_genes.singles_AF_filtered.discovery_cohort_genes.maf")
-
-# first, extract adjacent bases to the mutated locus and classify them into 96 subsitution classes
-laml.tnm = trinucleotideMatrix(maf = mutations.maf, ref_genome = "~/Documents/references/GRCh37-lite.fa",
-                               ignoreChr = "chr23", useSyn = FALSE)
-
-# extractSignatures uses a non-negative matrix factorization to decompose 92 samples x 96 matrix into r signatures.
-# By default, the function runs NMF on 6 ranks and chooses the best possible value based on maximum cophenetic-correlation coefficients (can also specify r).  Once decomposed, signatures are compared against known signatures derived from Alexandrov et al., and cosine similarity is calculated to identify the best match.
-
-library(NMF)
-laml.sign = extractSignatures(mat = laml.tnm, nTry = 3, plotBestFitRes = FALSE)
-#laml.sign = extractSignatures(mat = laml.tnm, nTry = 20, plotBestFitRes = FALSE)
-
-# Using 3 as a best-fit rank based on decreasing cophenetic correlation coefficient.
-# Comparing against experimentally validated 30 signatures (See http://cancer.sanger.ac.uk/cosmic/signatures)
-# Found Signature_1 most similar to validated Signature_19. Aetiology: Unknown [cosine-similarity: 0.566] 
-# Found Signature_2 most similar to validated Signature_3. Aetiology: defects in DNA-DSB repair by HR [cosine-similarity: 0.665] 
-#Found Signature_3 most similar to validated Signature_3. Aetiology: defects in DNA-DSB repair by HR [cosine-similarity: 0.556] 
-
-plotSignatures(laml.sign)
-plotSignatures(laml.sign, contributions = TRUE)
-
-# look at comparison of similarities of detected signatures against validated signatures
-library(corrplot)
-corrplot::corrplot(corr = laml.sign$coSineSimMat, 
-                   col = RColorBrewer::brewer.pal(n = 9, name = 'Blues'),
-                   is.corr = FALSE, 
-                   tl.cex = 0.6, 
-                   tl.col = 'black', 
-                   cl.cex = 0.6)
-
-# alternatively represent in heatmap form:
-library(pheatmap)
-
-pheatmap::pheatmap(mat = laml.sign$coSineSimMat, cluster_rows = FALSE, main = "cosine similarity against validated signatures")
-
 
 ```
 
