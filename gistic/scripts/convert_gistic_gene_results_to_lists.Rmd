@@ -1,0 +1,33 @@
+---
+title: "Conversion of mutation summary to MAF"
+author: "Stacy Hung"
+date: "October 22, 2018"
+output: html_document
+---
+
+This script takes in results from GISTIC, specifically the following files:
+1. *.amp_genes.conf_90.txt
+2. *.del_genes.conf_90.txt
+
+and converts the gene lists from wide to long format
+
+```{r}
+library(tidyr) # gather
+
+# read in data
+amp.genes <- read.table("/Volumes/shung/projects/gzl_exomes/gistic/output/2019_04_09-threshold_0.1/amp_genes.conf_90.for_list.txt", sep = "\t", header = TRUE, fill = TRUE)
+del.genes <- read.table("/Volumes/shung/projects/gzl_exomes/gistic/output/2019_04_09-threshold_0.1/del_genes.conf_90.for_list.txt", sep = "\t", header = TRUE, fill = TRUE)
+
+# transform from wide to long
+amp.genes.list <- gather(amp.genes, cytoband, gene, X1q21.1:X14q11.2.1)
+del.genes.list <- gather(del.genes, cytoband, gene, X19p12:X4p16.3)
+
+# clean up rows that do not have a value
+amp.genes.list <- amp.genes.list[!(is.na(amp.genes.list$gene) | amp.genes.list$gene==""), ]
+del.genes.list <- del.genes.list[!(is.na(del.genes.list$gene) | del.genes.list$gene==""), ]
+
+# write result to output
+write.table(amp.genes.list, "/Volumes/shung/projects/gzl_exomes/gistic/output/2019_04_09-threshold_0.1/amp_genes.conf_90.list.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+write.table(del.genes.list, "/Volumes/shung/projects/gzl_exomes/gistic/output/2019_04_09-threshold_0.1/del_genes.conf_90.list.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+```
