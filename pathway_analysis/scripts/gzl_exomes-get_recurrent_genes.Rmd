@@ -1,0 +1,62 @@
+---
+title: "pmbcl_exomes-get_significant+recurrent_genes.Rmd"
+author: "Stacy Hung"
+date: "September 19, 2018"
+output: html_document
+---
+
+This script combines MutSig genes with additional "high-confidence" recurrent genes, based on the following criteria:
+1. The gene is mutated in 3+ paired cases
+2. The gene is mutated in >= 10% of the entire cohort (paired + unpaired cases)
+3. UTR Mutations are excluded
+
+Genes annotated as "orfs" or belonging to the MUC+ and IG+ (Immunoglobulin) families are also to be excluded.
+
+## Load data
+
+```{r}
+library(stringr)
+library(plyr)
+library(dplyr)
+
+mutations.part1 <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/snvs_indels.30_final.default_and_optimized.txt", sep = "\t", header = TRUE, fill = TRUE)
+mutations.part2 <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/t_v_me.all/snvs_indels.t_v_me.GZ197.OPTIMIZED_thresholds.txt", sep = "\t", header = TRUE, fill = TRUE)
+
+# combine parts 1 and 2, and remove "failed" sample GZ310T
+mutations.all <- rbind(mutations.part1, mutations.part2)
+rm(mutations.part1)
+rm(mutations.part2)
+
+# remove failed samples
+failures <- c("GZ310T")
+mutations.all <- filter(mutations.all, !(mutations.all$tumor_id %in% failures))
+mutations.all$tumor_id <- factor(mutations.all$tumor_id)
+
+# remove UTR mutations
+UTR_mutations <- c("UTR_3_PRIME", "UTR_5_PRIME")
+mutations.all <- filter(mutations.all, !(mutations.all$effect %in% UTR_mutations))
+mutations.all$effect <- factor(mutations.all$effect)
+
+# remove uninteresting genes
+mutations.filtered <- unique(rbind(
+              mutations.all[!grepl("(^MUC|^IG|orf)", mutations.all$gene), ] 
+              ))
+mutations.filtered$gene <- factor(mutations.filtered$gene)
+
+# now get genes that are mutated in 20% of all cases
+keeps <- c("tumor_id", "gene")
+mutated_patients.all <- unique(mutations.filtered[keeps])
+gene.patients_mutated.all <- as.data.frame(table(mutated_patients.all$gene))
+colnames(gene.patients_mutated.all) <- c("gene", "cases_mutated")
+gene.patients_mutated.all$proportion <- gene.patients_mutated.all$cases_mutated / 30
+gene.patients_mutated.freq_X_plus <- subset(gene.patients_mutated.all, gene.patients_mutated.all$proportion >= 0.05)
+
+# >= 20% --> 2 genes (B2M and SOCS)
+# >= 10% --> 41 genes
+# >= 5% --> 208 genes
+
+# write to output
+write.table(gene.patients_mutated.freq_X_plus, "/Volumes/shung/projects/gzl_exomes/pathway_analysis/recurrently_mutated_genes.txt", row.names = FALSE, quote = FALSE)
+```
+
+

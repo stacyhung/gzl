@@ -1,0 +1,20 @@
+---
+title: "Conversion of mutation summary to MAF"
+author: "Stacy Hung"
+date: "October 22, 2018"
+output: html_document
+---
+
+This script takes in results a two-column pathway-gene list and converts it to matrix format (to plot gene vs. pathway)
+
+```{r}
+library(tidyr) # gather
+
+# read in data
+genes_per_pathway.df <- read.table("/Volumes/shung/projects/gzl_exomes/pathway_analysis/go_enrichment/panther_pathway-gene_mutated_targets.txt", sep = "\t", header = TRUE, fill = TRUE)
+
+genes.vs.pathway <- table(genes_per_pathway.df$gene, genes_per_pathway.df$full_pathway)
+
+# write result to output
+write.table(genes.vs.pathway, "/Volumes/shung/projects/gzl_exomes/pathway_analysis/go_enrichment/matrix-panther_pathway-VS-gene_mutated_targets.txt", sep = "\t", quote = FALSE)
+```

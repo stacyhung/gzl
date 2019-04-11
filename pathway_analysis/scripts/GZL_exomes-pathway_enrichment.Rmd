@@ -1,0 +1,51 @@
+---
+title: "GZL_exomes-pathway_enrichment"
+author: "Stacy Hung"
+date: "April 11, 2019"
+output: html_document
+---
+
+## Visualization of pathways that are signficantly enriched in GO terms
+
+Figure caption: 
+
+Recurrently mutated genes (mutated in at least 20% of cases) have a significant enrichment in B-cell regulation and activation pathways.
+
+
+## Load data
+
+```{r}
+# read in data
+#data.df <- read.table("/Volumes/shung/projects/gzl_exomes/pathway_analysis/go_enrichment/panther_results-mutated_target_genes-for_R.txt", sep = "\t", header = TRUE)
+data.df <- unique(read.table("/Volumes/shung/projects/gzl_exomes/pathway_analysis/go_enrichment/bp_results_for_R.txt", sep = "\t", header = TRUE))
+
+# rename columns
+colnames(data.df) <- c("pathway", "GO_biological_process", "background", "sample", "expected_p_val", "fold_enrichment", "p_value", "fdr")
+
+# create a column for -log10(p-value)
+data.df$p_value_v2 <- -1*log10(data.df$p_value)
+```
+
+## Visualization
+
+```{r}
+library(ggplot2)
+
+# maintain the order of biological process and pathway
+## set the levels in order we want
+data.df <- within(data.df, pathway <- factor(pathway, levels = data.df$pathway))
+data.df <- within(data.df, GO_biological_process <- factor(GO_biological_process, levels = rev(data.df$GO_biological_process)))
+
+#data.df$pathway <- factor(data.df$pathway, levels = data.df$pathway)
+#data.df$GO_biological_process <- factor(data.df$GO_biological_process, levels = rev(levels(data.df$GO_biological_process)))
+
+# draw barplot of biological process with -log(p-value)
+p <- ggplot(data = data.df, aes(x=GO_biological_process, y=p_value_v2, fill=pathway)) + 
+  geom_bar(stat="identity") + 
+  coord_flip() +
+  xlab("") +
+  ylab("-log(p-value)") +
+  scale_fill_brewer(palette="Set1")
+
+#  ggtitle("PANTHER pathways in mutated target genes")
+```
