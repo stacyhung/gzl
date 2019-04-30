@@ -1,0 +1,203 @@
+---
+title: "SNV Heatmap"
+author: "Stacy Hung"
+date: "March 26, 2019"
+output: html_document
+---
+
+This script generates an oncoplot that orders mutations by pathology and for genes that have been selected accordingly:
+  * Gene must be present in the target gene panel (n=217)
+    * Gene is mutated in 10%+ of group 0 OR
+    * Gene is mutated in 10%+ of group 1 and 2 combined OR
+    * Gene is mutated in group 3
+    
+Mutations have been filtered as follows:
+  - somatic effect, excluding UTR mutations
+  - filters used for SNV/indel analysis pipeline (default filters for t vs. blood and optimized filters for t vs. ME)
+  
+NB: Previously, genes were filtered based on the requirement of being mutated in 2+ cases; in this case, we do not want to apply this filter since we want a bigger picture across pathologies.
+
+***Specifically this script takes the above data, and extracts data for group 0, removing non-mutated genes.
+
+## Load packages
+
+```{r}
+# NB: if you need to install this package, install it using devtools from the github source!!!
+# The bioconductor version of GenVisR is buggy (not compatible with required libraries)
+# Installing GenVisR may also require the installation of the VariantAnnotation pacakge (from bioconductor)
+source("https://bioconductor.org/biocLite.R")
+biocLite("VariantAnnotation")
+library("VariantAnnotation")
+
+install.packages("devtools")
+library(devtools)
+install_github("griffithlab/GenVisR")
+library("GenVisR")
+
+source("https://bioconductor.org/biocLite.R")
+biocLite("maftools")
+library(maftools)
+
+library(gridExtra)
+library(dplyr)
+library(plyr)
+```
+
+
+## Get list of genes to use for oncoplot
+
+```{r}
+library(dplyr)
+library(plyr)
+
+# get full list of mutations that will be potentially used for oncoplot
+mutations.df <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.maf", sep = "\t", header = TRUE)
+
+# load target panel genes
+genes.target <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/WES_data/target_genes.FINAL_217.txt", header = FALSE)
+colnames(genes.target) <- c("gene")
+genes.target <- as.vector(genes.target$gene)
+
+# load metadata
+clinical.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/GZ_WES_cases-clinical_data.mapped.txt", sep = "\t", header = TRUE)
+
+# filter mutation dataset for target genes --> there are 151 genes mutated that are also present on the target panel
+mutations.df <- filter(mutations.df, mutations.df$Hugo_Symbol %in% genes.target)
+mutations.df$Hugo_Symbol <- factor(mutations.df$Hugo_Symbol)
+
+# map on formal patient id mappings
+patient_id.to.new_patient_id <- as.vector(clinical.data$Tumor_Sample_Barcode)
+names(patient_id.to.new_patient_id) <- as.vector(clinical.data$tumor_id2)
+mutations.df$Tumor_Sample_Barcode <- revalue(mutations.df$Tumor_Sample_Barcode, patient_id.to.new_patient_id)
+
+# map on pathology group (group 0, 1+2, 3)
+patient.to.path_group <- as.vector(clinical.data$Path_group)
+names(patient.to.path_group) <- as.vector(clinical.data$Tumor_Sample_Barcode)
+mutations.df$Path_group <- revalue(mutations.df$Tumor_Sample_Barcode, patient.to.path_group)
+
+# calculate NUMBER OF CASES mutated in each GENE
+mutated_cases.by_path_and_gene <- unique(mutations.df[c("Hugo_Symbol", "Tumor_Sample_Barcode", "Path_group")])
+mutated.table <- as.data.frame(table(mutated_cases.by_path_and_gene$Path_group, mutated_cases.by_path_and_gene$Hugo_Symbol))
+colnames(mutated.table) <- c("Path_group", "gene", "num_mutated")
+
+mutated.group_0 <- unique(filter(mutated_cases.by_path_and_gene, mutated_cases.by_path_and_gene$Path_group == "0 = cHL"))
+mutated.group_1_2 <- unique(filter(mutated_cases.by_path_and_gene, (mutated_cases.by_path_and_gene$Path_group == "1 = cHL-interm" | 
+                                               mutated_cases.by_path_and_gene$Path_group == "2 = LBCL-interm")))
+mutated.group_3 <- unique(filter(mutated_cases.by_path_and_gene, mutated_cases.by_path_and_gene$Path_group == "3 = LBCL"))
+
+# get NUMBER OF CASES mutated per GROUP (to calculate normalized proportions)
+NUM_GROUP_0 <- length(unique(mutated.group_0$Tumor_Sample_Barcode))
+NUM_GROUP_1_2 <- length(unique(mutated.group_1_2$Tumor_Sample_Barcode))
+NUM_GROUP_3 <- length(unique(mutated.group_3$Tumor_Sample_Barcode))
+
+# extract GENES mutated in each GROUP 
+num_mutated.by_gene.group_0 <- subset(mutated.table, mutated.table$Path_group == "0 = cHL" & mutated.table$num_mutated > 0)
+num_mutated.by_gene.group_1_and_2 <- subset(mutated.table, (mutated.table$Path_group == "1 = cHL-interm" | 
+                                       mutated.table$Path_group == "2 = LBCL-interm") & mutated.table$num_mutated > 0)
+# combine counts for group 1 and 2, since they are currently separate
+num_mutated.group_1_2.combined_counts <- as.data.frame(table(mutated.group_1_2$Hugo_Symbol))
+colnames(num_mutated.group_1_2.combined_counts) <- c("gene", "num_mutated")
+num_mutated.by_gene.group_3 <- subset(mutated.table, mutated.table$Path_group == "3 = LBCL" & mutated.table$num_mutated > 0)
+
+# calculate proportion of mutated cases
+num_mutated.by_gene.group_0$proportion <- num_mutated.by_gene.group_0$num_mutated / NUM_GROUP_0*100
+num_mutated.group_1_2.combined_counts$proportion <- num_mutated.group_1_2.combined_counts$num_mutated / NUM_GROUP_1_2*100
+
+PERCENT_MUTATED = 10
+
+# identify genes that fall are present in 10%+ of group 0, genes present in 10%+ of group 1+2, and all genes mutated in group 3
+num_mutated.pathgp.0_cutoff <- subset(num_mutated.by_gene.group_0, num_mutated.by_gene.group_0$proportion >= PERCENT_MUTATED)
+num_mutated.pathgp.1_2_cutoff <- subset(num_mutated.group_1_2.combined_counts, 
+                                        num_mutated.group_1_2.combined_counts$proportion >= PERCENT_MUTATED)
+pathgp_genes.10_plus <- unique(c(as.vector(num_mutated.pathgp.0_cutoff$gene),as.vector(num_mutated.pathgp.1_2_cutoff$gene),
+                                 as.vector(num_mutated.by_gene.group_3$gene)))
+
+write.table(pathgp_genes.10_plus, "/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/pathgp_genes.10_plus.txt", quote = FALSE, row.names = FALSE)
+
+# create mutation matrix for filtered gene list
+mutations.df <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.mutated_target_panel.maf", sep = "\t", header = TRUE, fill = TRUE)
+mutations.df <- filter(mutations.df, mutations.df$Hugo_Symbol %in% pathgp_genes.10_plus)
+write.table(mutations.df, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.filtered_path_group.maf", sep = "\t", quote = FALSE, row.names = FALSE)
+
+mutations.df$Hugo_Symbol <- factor(mutations.df$Hugo_Symbol)
+mutations.df <- unique(mutations.df[c("Hugo_Symbol", "Tumor_Sample_Barcode")])
+mutation.matrix <- table(mutations.df$Tumor_Sample_Barcode, mutations.df$Hugo_Symbol)
+write.table(mutation.matrix, "/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/mutation_matrix-path_groups_10+_freq_mutated.txt", sep = "\t", quote = FALSE)
+```
+
+## Apply additional filters to obtain genes mutated only in group 0, and patients in group 0.
+
+```{r}
+
+mutations.df <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.mutated_target_panel.maf", sep = "\t", header = TRUE, fill = TRUE)
+# filter for genes of interest
+mutations.df <- filter(mutations.df, mutations.df$Hugo_Symbol %in% pathgp_genes.10_plus)
+
+# filter for group 0
+patients.group_0 <- unique(mutated.group_0$Tumor_Sample_Barcode)
+mutations.df <- filter(mutations.df, mutations.df$Tumor_Sample_Barcode %in% patients.group_0)
+
+mutations.df$Hugo_Symbol <- factor(mutations.df$Hugo_Symbol)
+mutations.df$Tumor_Sample_Barcode <- factor(mutations.df$Tumor_Sample_Barcode)
+mutations.df <- unique(mutations.df[c("Hugo_Symbol", "Tumor_Sample_Barcode")])
+mutation.matrix <- table(mutations.df$Tumor_Sample_Barcode, mutations.df$Hugo_Symbol)
+write.table(mutation.matrix, "/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/mutation_matrix-group0_10+_freq_mutated.txt", sep = "\t", quote = FALSE)
+
+# sort by frequency of mutatations within each group
+mut.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/EBV_grp0_visualization/mutation.matrix.txt", sep = "\t", header = TRUE)
+
+# sort by each gene in their current order
+mut.data.sorted <- mut.data[with(mut.data, order(EBER, -GRIA4, -SOCS1, -ABCD2, -ADAP1, -AMOT, -ARID1A, -B2M, -BCL2, -BRWD3, -CSMD3, -DIAPH3, -EGR1, -HIST1H1B, -HIST1H1E, -IRF4, -LMF2, - MSH6, -NFKBIB, -POU2AF1, -SETD1B, -SHISA6, SPEN, -SPSB4, -USP5, -GRIN3A, -DHX58, -MAPK6, -MCL1, -PRKDC, -RELN, -XCR1)), ]
+
+patients.ordered <- as.vector(mut.data.sorted$patient)
+write.table(patients.ordered, "/Volumes/shung/projects/gzl_exomes/data/EBV_grp0_visualization/patients.ordered.txt", sep = "\t", quote = FALSE)
+
+mut.oncoplot <- t(mut.data.sorted)
+genes.ordered <- c("GRIA4", "SOCS1", "ABCD2", "ADAP1", "AMOT", "ARID1A", "B2M", "BCL2", "BRWD3", "CSMD3", "DIAPH3", "EGR1", "HIST1H1B", "HIST1H1E", "IRF4", "LMF2", "MSH6", "NFKBIB", "POU2AF1", "SETD1B", "SHISA6", "SPEN", "SPSB4", "USP5", "DHX58", "GRIN3A", "MAPK6", "MCL1", "PRKDC", "RELN", "XCR1")
+write.table(genes.ordered, "/Volumes/shung/projects/gzl_exomes/data/EBV_grp0_visualization/genes.ordered.txt", sep = "\t", quote = FALSE)
+
+write.table(mut.oncoplot, "/Volumes/shung/projects/gzl_exomes/data/EBV_grp0_visualization/mutation_matrix-groups0_10+_freq_mutated.oncoplot.txt", sep = "\t", quote = FALSE)
+
+```
+
+## oncoplot
+
+```{r}
+# to get latest version of maftools, install from github
+library("devtools")
+install_github(repo = "PoisonAlien/maftools")
+library(maftools)
+
+clinical.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/GZ_WES_cases-clinical_data.mapped.txt", sep = "\t", header = TRUE)
+clinical.data$Path_group <- revalue(clinical.data$Path_group, 
+                                          c("0 = cHL"="0_=_cHL",
+                                            "1 = cHL-interm"="1_=_cHL-interm",
+                                            "2 = LBCL-interm"="2_=_LBCL-interm",
+                                            "3 = LBCL"="3_=_LBCL"))
+
+mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/data/EBV_grp0_visualization/gzl_exomes-snvs_indels.filtered_path_group.maf", clinicalData = clinical.data)
+
+# colours for annotation tracks
+annot.colors <- list(Gender = c("Female" = "palevioletred1", "Male" = "royalblue1"),
+                     EBER = c("Negative" = "black", "Positive" = "red"),
+                     Mediastinal = c("Not_involved" = "grey", "Involved" = "mediumpurple"),
+                     Age_yrs = c("<_45" = "bisque", ">=_45" = "bisque4"),
+                     Path_group = c("0_=_cHL" = "lightsalmon",
+                                   "1_=_cHL-interm" = "khaki1",
+                                   "2_=_LBCL-interm" = "lightgreen", 
+                                   "3_=_LBCL" = "steelblue1")
+               )
+
+oncoplot(maf = mutations.maf, SampleNamefontSize = 0.6,
+         removeNonMutated = FALSE,
+         sampleOrder = patients.ordered,
+         genes = genes.ordered, 
+         keepGeneOrder = TRUE, fontSize = 0.7, titleFontSize = 0, legendFontSize = 1, annotationFontSize = 1,
+         clinicalFeatures = c("Path_group", "EBER", "Mediastinal", "Gender", "Age_yrs"),
+         annotationColor = annot.colors, 
+         showTumorSampleBarcodes = TRUE,
+         drawColBar = FALSE)
+
+  #legendFontSize = 1, 
+```
+
