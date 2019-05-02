@@ -171,11 +171,20 @@ annot.colors <- list(Gender = c("Female" = "palevioletred1", "Male" = "royalblue
 
 oncoplot(maf = mutations.maf, SampleNamefontSize = 0.6,
          removeNonMutated = FALSE,
-         sampleOrder = patients.ordered,
+         sampleOrder = patients.ordered, 
          genes = genes.ordered, 
          keepGeneOrder = TRUE, fontSize = 0.6, titleFontSize = 0, legendFontSize = 1, annotationFontSize = 1,
          clinicalFeatures = c("EBER", "Path_group", "Mediastinal_involvement", "Gender", "Age_category"),
          annotationColor = annot.colors, 
+         showTumorSampleBarcodes = TRUE,
+         drawColBar = FALSE)
+
+# version with large patient font
+oncoplot(maf = mutations.maf, SampleNamefontSize = 0.75,
+         removeNonMutated = FALSE,
+         sampleOrder = patients.ordered, 
+         genes = genes.ordered, 
+         keepGeneOrder = TRUE, fontSize = 0.6, titleFontSize = 0, legendFontSize = 0, annotationFontSize = 0,
          showTumorSampleBarcodes = TRUE,
          drawColBar = FALSE)
 

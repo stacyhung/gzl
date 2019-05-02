@@ -162,6 +162,11 @@ clinical.data$Path_group <- revalue(clinical.data$Path_group,
 
 mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/gzl_exomes-snvs_indels.filtered_path_group.with_REMOVE_gene.maf", clinicalData = clinical.data)
 
+genes.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/genes.ordered.CURRENT.txt")
+genes.ordered <- as.vector(genes.ordered$x)
+patients.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/patients.ordered.CURRENT.txt")
+patients.ordered <- as.vector(patients.ordered$x)
+
 # colours for annotation tracks
 annot.colors <- list(Gender = c("Female" = "palevioletred1", "Male" = "royalblue1"),
                      EBER = c("Negative" = "black", "Positive" = "red"),
@@ -184,6 +189,15 @@ oncoplot(maf = mutations.maf, SampleNamefontSize = 0.6,
          keepGeneOrder = TRUE, fontSize = 0.6, titleFontSize = 0, legendFontSize = 1, annotationFontSize = 1,
          clinicalFeatures = c("Path_group", "EBER", "Mediastinal_involvement", "Gender", "Age_category"),
          annotationColor = annot.colors, 
+         showTumorSampleBarcodes = TRUE,
+         drawColBar = FALSE)
+
+# version with large patient font
+oncoplot(maf = mutations.maf, SampleNamefontSize = 0.75,
+         removeNonMutated = FALSE,
+         sampleOrder = patients.ordered, 
+         genes = genes.ordered, 
+         keepGeneOrder = TRUE, fontSize = 0.6, titleFontSize = 0, legendFontSize = 0, annotationFontSize = 0,
          showTumorSampleBarcodes = TRUE,
          drawColBar = FALSE)
 
