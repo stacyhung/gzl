@@ -1,0 +1,183 @@
+---
+title: "SNV Heatmap"
+author: "Stacy Hung"
+date: "March 26, 2019"
+output: html_document
+---
+
+This script generates an oncoplot that orders mutations by EBER status and for genes that have been selected accordingly:
+  * Gene must be present in the target gene panel (n=217)
+    * Gene is mutated in 10%+ of EBV+ cases
+    * Gene is mutated in 10%+ of EBV- cases
+    
+Mutations have been filtered as follows:
+  - somatic effect, excluding UTR mutations
+  - filters used for SNV/indel analysis pipeline (default filters for t vs. blood and optimized filters for t vs. ME)
+  - GZ222 and GZ229 were excluded from the analysis as they are considered failures (tumor contamination)
+  
+NB: Previously, genes were filtered based on the requirement of being mutated in 2+ cases; in this case, we do not want to apply this filter since we want a bigger picture across pathologies.
+
+
+## Load packages
+
+```{r}
+# NB: if you need to install this package, install it using devtools from the github source!!!
+# The bioconductor version of GenVisR is buggy (not compatible with required libraries)
+# Installing GenVisR may also require the installation of the VariantAnnotation pacakge (from bioconductor)
+source("https://bioconductor.org/biocLite.R")
+biocLite("VariantAnnotation")
+library("VariantAnnotation")
+
+install.packages("devtools")
+library(devtools)
+install_github("griffithlab/GenVisR")
+library("GenVisR")
+
+source("https://bioconductor.org/biocLite.R")
+biocLite("maftools")
+library(maftools)
+
+library(gridExtra)
+```
+
+## Get list of genes to use for oncoplot
+```{r}
+library(dplyr)
+library(plyr)
+
+# get full list of mutations that will be potentially used for oncoplot
+mutations.df <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.maf", sep = "\t", header = TRUE)
+
+# load target panel genes
+genes.target <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/WES_data/target_genes.FINAL_217.txt", header = FALSE)
+colnames(genes.target) <- c("gene")
+genes.target <- as.vector(genes.target$gene)
+
+# read in metadata
+clinical.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/GZ_WES_cases-clinical_data.mapped.txt", sep = "\t", header = TRUE)
+
+# filter mutation dataset for target genes --> there are 151 genes mutated that are also present on the target panel
+mutations.df <- filter(mutations.df, mutations.df$Hugo_Symbol %in% genes.target)
+mutations.df$Hugo_Symbol <- factor(mutations.df$Hugo_Symbol)
+
+# map on formal patient id mappings
+patient_id.to.new_patient_id <- as.vector(clinical.data$Tumor_Sample_Barcode)
+names(patient_id.to.new_patient_id) <- as.vector(clinical.data$tumor_id2)
+mutations.df$Tumor_Sample_Barcode <- revalue(mutations.df$Tumor_Sample_Barcode, patient_id.to.new_patient_id)
+
+# map on EBER status (postive / negative)
+patient.to.EBER <- as.vector(clinical.data$EBER)
+names(patient.to.EBER) <- as.vector(clinical.data$Tumor_Sample_Barcode)
+mutations.df$EBER <- revalue(mutations.df$Tumor_Sample_Barcode, patient.to.EBER)
+
+# calculate NUMBER OF CASES mutated in each GENE
+mutated_cases.by_eber_and_gene <- unique(mutations.df[c("Hugo_Symbol", "Tumor_Sample_Barcode", "EBER")])
+mutated.table <- as.data.frame(table(mutated_cases.by_path_and_gene$EBER, mutated_cases.by_path_and_gene$Hugo_Symbol))
+colnames(mutated.table) <- c("EBER_status", "gene", "num_mutated")
+
+mutated.EBER_pos <- unique(filter(mutated_cases.by_eber_and_gene, mutated_cases.by_eber_and_gene$EBER == "Positive"))
+mutated.EBER_neg <- unique(filter(mutated_cases.by_eber_and_gene, mutated_cases.by_eber_and_gene$EBER == "Negative"))
+
+# get NUMBER OF CASES mutated per GROUP (to calculate normalized proportions)
+NUM_EBER_POS <- length(unique(mutated.EBER_pos$Tumor_Sample_Barcode))
+NUM_EBER_NEG <- length(unique(mutated.EBER_neg$Tumor_Sample_Barcode))
+
+# extract GENES mutated in each GROUP 
+num_mutated.by_EBER_pos <- subset(mutated.table, mutated.table$EBER_status == "Positive" & mutated.table$num_mutated > 0)
+num_mutated.by_EBER_neg <- subset(mutated.table, mutated.table$EBER_status == "Negative" & mutated.table$num_mutated > 0)
+
+# calculate proportion of mutated cases
+num_mutated.by_EBER_pos$proportion <- num_mutated.by_EBER_pos$num_mutated / NUM_EBER_POS*100
+num_mutated.by_EBER_neg$proportion <- num_mutated.by_EBER_neg$num_mutated / NUM_EBER_NEG*100
+
+PERCENT_MUTATED = 10
+
+# identify genes that fall are present in 10%+ each EBER group
+num_mutated.EBER_pos.cutoff <- subset(num_mutated.by_EBER_pos, num_mutated.by_EBER_pos$proportion >= PERCENT_MUTATED)
+num_mutated.EBER_neg.cutoff <- subset(num_mutated.by_EBER_neg, num_mutated.by_EBER_neg$proportion >= PERCENT_MUTATED)
+
+eber_genes.10_plus <- unique(c(as.vector(num_mutated.EBER_pos.cutoff$gene), as.vector(num_mutated.EBER_neg.cutoff$gene)))
+
+write.table(eber_genes.10_plus, "/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/eber_genes.10_plus.txt", quote = FALSE, row.names = FALSE)
+
+# create mutation matrix for filtered gene list
+mutations.df <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.mutated_target_panel.maf", sep = "\t", header = TRUE, fill = TRUE)
+mutations.df <- filter(mutations.df, mutations.df$Hugo_Symbol %in% eber_genes.10_plus)
+write.table(mutations.df, "/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/gzl_exomes-snvs_indels.filtered_eber_group.maf", sep = "\t", quote = FALSE, row.names = FALSE)
+
+mutations.df$Hugo_Symbol <- factor(mutations.df$Hugo_Symbol)
+mutations.df <- unique(mutations.df[c("Hugo_Symbol", "Tumor_Sample_Barcode")])
+mutation.matrix <- table(mutations.df$Tumor_Sample_Barcode, mutations.df$Hugo_Symbol)
+write.table(mutation.matrix, "/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/mutation_matrix-eber_groups_10+_freq_mutated.txt", sep = "\t", quote = FALSE)
+
+```
+
+## Sort matrix
+
+```{r}
+# manual steps that are easier in Excel:
+# map EBER status for each patient
+# sort by EBER status (negative, positive)
+# transpose, calculate sums across cohort, and each group
+# sort by total sum (decreassing), sum of patients in EBER+ (increasing), and sum of patients in EBER- (increasing)
+# --> this ensures that genes unique mutated in EBER+ show up at the bottom of the plot
+
+# for each gene, calculate number of mutated cases; and number of pathology group-specific cases
+mut.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/mutation_matrix-eber_groups_10+_freq_mutated.sorted_by_grp_sums.txt", sep = "\t", header = TRUE)
+
+# sort by each gene in their current order
+mut.data.sorted <- mut.data[with(mut.data, order(EBER_status, -SOCS1, -B2M, -GNA13, -LRRN3, -ITPKB, -NCOR1, -CSF2RB, -CSMD3, -IRF2BP2, -ZNF217, -ABCA13, -ABCC6, -ARID1A, -EGR1, -KCNQ3, -MFHAS1, -MLL2, -NFKBIE, -RC3H2, -SIAH2, -SPEN, -STAT6, -TNFAIP3, -WEE1, -C2CD3, -CISH, -IRF4, -LMF2, -PRKDC, -RELN, -CD58, -AMOT, -ASCC3, -BARX2, -DDX60, -EHMT2, -GPR137C, -GRIN3A, -HIST1H4C, -MAPK6, -MCL1, -MLL, -NLRP4, -NOTCH2, -POM121L12, -RIBC2, -SEMA3E, -XCR1, -ACTB, -ATP13A4, -DHX58, -STAT3, -HIST1H1D, -NOTCH1, -RGS1, -SGK1, -TAF1)), ]
+
+patients.ordered <- as.vector(mut.data.sorted$patient)
+write.table(patients.ordered, "/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/patients.ordered.CURRENT.txt", sep = "\t", quote = FALSE)
+
+mut.oncoplot <- t(mut.data.sorted)
+genes.ordered <- as.vector(row.names(mut.oncoplot))
+genes.ordered <- genes.ordered[ genes.ordered != "patient"]
+genes.ordered <- genes.ordered[ genes.ordered != "EBER_status"]
+write.table(genes.ordered, "/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/genes.ordered.CURRENT.txt", sep = "\t", quote = FALSE)
+
+write.table(mut.oncoplot, "/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/mutation_matrix-eber_groups_10+_freq_mutated.oncoplot.txt", sep = "\t", quote = FALSE)
+```
+
+## EBV-specific oncoplots
+
+```{r}
+# to get latest version of maftools, install from github
+library("devtools")
+install_github(repo = "PoisonAlien/maftools")
+library(maftools)
+
+clinical.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/GZ_WES_cases-clinical_data.with_updated_mediastinal_and_age.txt", sep = "\t", header = TRUE)
+
+mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/gzl_exomes-snvs_indels.filtered_eber_group.maf", clinicalData = clinical.data)
+
+# colours for annotation tracks
+annot.colors <- list(Gender = c("Female" = "palevioletred1", "Male" = "royalblue1"),
+                     EBER = c("Negative" = "black", "Positive" = "red"),
+                     Mediastinal = c("Not_involved" = "grey", "Secondary" = "plum2", "Primary" = "purple"),
+                     Age_yrs = c("<_45" = "bisque", "45_<_age_<_60"="navajowhite3", ">=_60" = "bisque4"),
+                     Path_group = c("0_=_cHL" = "lightsalmon",
+                                   "1_=_cHL-interm" = "khaki1",
+                                   "2_=_LBCL-interm" = "lightgreen", 
+                                   "3_=_LBCL" = "steelblue1")
+               )
+
+# plot by EBV+ and EBV- sorted cohorts
+# list of genes that are mutated in at least 10% of EBV+ and EBV- cases, sorted by gene
+#genes.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/genes.ordered.CURRENT.txt")
+#genes.ordered <- as.vector(genes.ordered$gene)
+#patients.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/patients.ordered.CURRENT.txt")
+
+oncoplot(maf = mutations.maf, SampleNamefontSize = 0.6,
+         removeNonMutated = FALSE,
+         sampleOrder = patients.ordered,
+         genes = genes.ordered, 
+         keepGeneOrder = TRUE, fontSize = 0.6, titleFontSize = 0, legendFontSize = 1, annotationFontSize = 1,
+         clinicalFeatures = c("EBER", "Path_group", "Mediastinal_involvement", "Gender", "Age_category"),
+         annotationColor = annot.colors, 
+         showTumorSampleBarcodes = TRUE,
+         drawColBar = FALSE)
+
+```
+

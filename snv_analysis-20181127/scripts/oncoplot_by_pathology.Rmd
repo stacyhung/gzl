@@ -153,7 +153,7 @@ library("devtools")
 install_github(repo = "PoisonAlien/maftools")
 library(maftools)
 
-clinical.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/GZ_WES_cases-clinical_data.mapped.txt", sep = "\t", header = TRUE)
+clinical.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/GZ_WES_cases-clinical_data.with_updated_mediastinal_and_age.txt", sep = "\t", header = TRUE)
 clinical.data$Path_group <- revalue(clinical.data$Path_group, 
                                           c("0 = cHL"="0_=_cHL",
                                             "1 = cHL-interm"="1_=_cHL-interm",
@@ -165,8 +165,8 @@ mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/data/Path_group_vi
 # colours for annotation tracks
 annot.colors <- list(Gender = c("Female" = "palevioletred1", "Male" = "royalblue1"),
                      EBER = c("Negative" = "black", "Positive" = "red"),
-                     Mediastinal = c("Not_involved" = "grey", "Involved" = "mediumpurple"),
-                     Age_yrs = c("<_45" = "bisque", ">=_45" = "bisque4"),
+                     Mediastinal = c("Not_involved" = "grey", "Secondary" = "plum2", "Primary" = "purple"),
+                     Age_yrs = c("<_45" = "bisque", "45_<_age_<_60"="navajowhite3", ">=_60" = "bisque4"),
                      Path_group = c("0_=_cHL" = "lightsalmon",
                                    "1_=_cHL-interm" = "khaki1",
                                    "2_=_LBCL-interm" = "lightgreen", 
@@ -182,11 +182,10 @@ oncoplot(maf = mutations.maf, SampleNamefontSize = 0.6,
          sampleOrder = patients.ordered,
          genes = genes.ordered, 
          keepGeneOrder = TRUE, fontSize = 0.6, titleFontSize = 0, legendFontSize = 1, annotationFontSize = 1,
-         clinicalFeatures = c("Path_group", "EBER", "Mediastinal", "Gender", "Age_yrs"),
+         clinicalFeatures = c("Path_group", "EBER", "Mediastinal_involvement", "Gender", "Age_category"),
          annotationColor = annot.colors, 
          showTumorSampleBarcodes = TRUE,
          drawColBar = FALSE)
 
-  #legendFontSize = 1, 
 ```
 
