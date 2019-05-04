@@ -1,0 +1,288 @@
+---
+title: "SNV Heatmap"
+author: "Stacy Hung"
+date: "February 19, 2018"
+output: html_document
+---
+
+This script takes mutational data (generated from SNV/indel analyses, in txt format) and extracts relevant fields required for a VCF file, and places them in MAF format so that we can then apply the MAF2VCF tool (since there are currently no tools that converts txt files into VCF files).
+
+The aim is to generate the same mutation files that are used for signature analysis with maftools, except in a different format (maf with additional columns to enable conversion to vcf). The vcf files are then used as input into another tool for extracting mutational signatures, MutationalPatterns.
+
+## Prepare files for maf to vcf conversion
+
+```{r}
+library(dplyr)
+library(plyr)
+library(tidyr)
+
+# load mutations for final 30 (not including GZ197), which has not been filtered for effect
+# without GZ222, GZ229
+mutations.part1 <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/snvs_indels.final_30_minus_GZ222_and_GZ229.default_and_optimized.incl_silent.txt", sep = "\t", header = TRUE, fill = TRUE)
+# load mutations for GZ197
+mutations.part2 <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/t_v_me.all/snvs_indels.t_v_me.GZ197.OPTIMIZED_thresholds.txt", sep = "\t", header = TRUE, fill = TRUE)
+# combine mutations
+mutations <- rbind(mutations.part1, mutations.part2)
+rm(mutations.part1)
+rm(mutations.part2)
+
+# map SnpEffect values to equivalent MAF Variant_Classification categories
+# map the actual patient id using the tumor id since the normal has a separate id
+# Note: we will arbitrarily map all "FRAME_SHIFT" mutations to a Frame_Shift_Del since there isn't an easy way to tell otherwise if the frameshift is an insertion or deletion
+snpeff_effect.to.MAF_VarClass <- c(
+                            "CODON_DELETION"="Frame_Shift_Del",
+                            "CODON_INSERTION"="Frame_Shift_Ins",
+                            "NON_SYNONYMOUS_CODING"="Missense_Mutation",
+                            "NON_SYNONYMOUS_START"="Missense_Mutation",
+                            "SPLICE_SITE_ACCEPTOR"="Splice_Site",
+                            "SPLICE_SITE_DONOR"="Splice_Site",
+                            "SPLICE_SITE_REGION"="Splice_Site",
+                            "START_GAINED"="Translation_Start_Site",
+                            "START_LOST"="Missense_Mutation",
+                            "STOP_GAINED"="Nonsense_Mutation",
+                            "STOP_LOST"="Nonstop_Mutation",
+                            "CODON_CHANGE_PLUS_CODON_INSERTION"="Frame_Shift_Ins",
+                            "CODON_CHANGE_PLUS_CODON_DELETION"="Frame_Shift_Del",
+                            "SYNONYMOUS_CODING"="Silent",
+                            "SYNONYMOUS_STOP"="Silent",
+                            "EXON"="Targeted_Region",
+                            "FRAME_SHIFT"="Frame_Shift_Del",
+                            "UTR_3_PRIME" = "3'UTR",
+                            "UTR_5_PRIME" = "5'UTR"
+                            )
+mutations$Variant_Classification <- revalue(mutations$effect, snpeff_effect.to.MAF_VarClass)
+
+# add label for SNP or INS or DEL
+mutations$type <- if_else(grepl("(DELETION|FRAME_SHIFT)", mutations$effect), 
+                          "DEL", 
+                          if_else(grepl("INSERTION", mutations$effect), "INS", "SNP"))
+
+# now take columns for MAF generation that are relevant for conversion to VCF format
+
+# required fields:
+#   - read depth in tumor [t_depth]
+#   - reference allele depth in tumor [t_ref_count]
+#   - variant allele depth in tumor [t_alt_count]
+#   - read depth in normal [n_depth]
+#   - reference allele depth in normal [n_ref_count]
+#   - variant allele depth in normal [n_alt_count]
+keeps <- c("gene", "tumor_id", "Variant_Classification", "type", "ref", "alt", 
+           "depth4_normal", "depth4_tumor", "var_reads_normal", "var_reads_tumor",
+           "gt_tumor", "impact", "fun_class", 
+           "transcript_id", "chr", "pos", "type")
+mutations <- mutations[keeps]
+
+# extract (and calculate as needed) specific depths of interest from depth4 columns:
+mutations <- separate(mutations, depth4_normal, into = c("n_ref_reads_f", "n_ref_reads_r", "n_var_reads_f", "n_var_reads_r"), sep = ",", remove = TRUE, convert = TRUE)
+mutations <- separate(mutations, depth4_tumor, into = c("t_ref_reads_f", "t_ref_reads_r", "t_var_reads_f", "t_var_reads_r"), sep = ",", remove = TRUE, convert = TRUE)
+mutations$t_depth <- mutations$t_ref_reads_f + mutations$t_ref_reads_r + mutations$t_var_reads_f + mutations$t_var_reads_r
+mutations$n_depth <- mutations$n_ref_reads_f + mutations$n_ref_reads_r + mutations$n_var_reads_f + mutations$n_var_reads_r
+mutations$t_ref_depth <- mutations$t_ref_reads_f + mutations$t_ref_reads_r
+mutations$t_var_depth <- mutations$t_var_reads_f + mutations$t_var_reads_r
+mutations$n_ref_depth <- mutations$n_ref_reads_f + mutations$n_ref_reads_r
+mutations$n_var_depth <- mutations$n_var_reads_f + mutations$n_var_reads_r
+  
+# keep only the columns that are relevant to MAF generation
+#keeps <- c("gene", "tumor_id", "Variant_Classification", "type", "ref", "alt", "gt_tumor", "impact", "fun_class", 
+#           "transcript_id", "chr", "pos", "type")
+#mutations <- mutations[keeps]
+
+# rename samples column to match MAF format
+library(data.table)
+setnames(mutations, "tumor_id", "Tumor_Sample_Barcode")
+setnames(mutations, "type", "Variant_Type")
+setnames(mutations, "ref", "Reference_Allele")
+setnames(mutations, "chr", "Chromosome")
+setnames(mutations, "pos", "Start_Position")
+setnames(mutations, "gene", "Hugo_Symbol")
+
+# remove "chr" (to meet requirements for Chromosome column)
+mutations$Chromosome <- gsub("^chr", "", mutations$Chromosome)
+
+# reorder columns:
+#keeps <- c("Hugo_Symbol", "Tumor_Sample_Barcode", "Variant_Classification", "Variant_Type",  
+#           "Chromosome", "Start_Position", "Reference_Allele", "alt", "gt_tumor",
+#           "impact", "fun_class", "transcript_id")
+#mutations <- mutations[keeps]
+
+# fill in Tumor_Seq_Allele1 and Tumor_Seq_Allele2 columns using gt column
+# if gt = "0/1", fill in Tumor_Seq_Allele1 as reference allele, otherwise (gt = 1/1), fill with alterante allele
+mutations$Tumor_Seq_Allele1 <- if_else(mutations$gt == "0/1", 
+                                              mutations$Reference_Allele, 
+                                              mutations$alt)
+mutations$Tumor_Seq_Allele2 <- mutations$alt
+mutations$alt <- NULL
+mutations$gt <- NULL
+
+# fill in gene name as "UNKNOWN" when missing (these are likely mutations that fall just outside the gene)
+mutations$gene <- as.character(mutations$Hugo_Symbol)
+mutations$gene[mutations$Hugo_Symbol==""] <- "UNKNOWN"
+mutations$gene <- as.factor(mutations$Hugo_Symbol)
+
+# Calculate end position
+mutations$End_Position <- mutations$Start_Position # default: SNP
+# For insertions: start coord = end coord + 1 --> end coord = start coord - 1
+mutations$End_Position <- ifelse(mutations$Variant_Type == "INS", 
+                                     mutations$Start_Position - 1,
+                                     mutations$End_Position)
+# For deletions: end coord = start coord + length (deletion) - 1
+#   length (deletion) ~ length (REF) - 1 --> end coord = start coord + length (REF) - 2
+mutations$End_Position <- ifelse(mutations$Variant_Type == "DEL", 
+                                     mutations$Start_Position + nchar(as.character(mutations$Reference_Allele)) - 2, 
+                                     mutations$End_Position)
+
+write.table(mutations, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs_indels.30_minus_GZ222_and_GZ229.default_and_optimized.incl_silent_and_UTR.for_vcf_conversion.maf", sep = "\t", quote = FALSE, row.names = FALSE)
+```
+
+## Generatino of EBV+ and EBV- datasets (based on inclusion of silent and UTR mutations)
+
+```{r}
+library(plyr)
+
+mutations.df <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs_indels.30_minus_GZ222_and_GZ229.default_and_optimized.incl_silent_and_UTR.maf", sep = "\t", header = TRUE, fill = TRUE)
+
+# read in EBV status for patients
+clinical.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/GZ_WES_cases-clinical_data.txt", sep = "\t", header = TRUE, fill = TRUE)
+
+patient.to.EBER_status <- as.vector(clinical.data$EBV)
+names(patient.to.EBER_status) <- as.vector(clinical.data$Tumor_Sample_Barcode)
+
+#patient.to.EBER_status <- c("GZ_BCC_54_T_LMD"="0")
+mutations.df$EBER_status <- revalue(mutations.df$Tumor_Sample_Barcode, patient.to.EBER_status)
+
+# get mutations for EBV+ (1) and EBV- (0) cases
+mutations.EBER_pos <- filter(mutations.df, mutations.df$EBER_status == 1)
+mutations.EBER_neg <- filter(mutations.df, mutations.df$EBER_status == 0)
+
+write.table(mutations.EBER_pos, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs_indels.30_minus_GZ222_and_GZ229_and_GZ310.incl_silent_and_UTR.EBER_pos.maf", sep = "\t", quote = TRUE, row.names = FALSE)
+write.table(mutations.EBER_neg, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs_indels.30_minus_GZ222_and_GZ229_and_GZ310.incl_silent_and_UTR.EBER_neg.maf", sep = "\t", quote = FALSE, row.names = FALSE)
+
+```
+
+## The mutational signature analysis
+
+```{r}
+library(maftools)
+library('NMF')
+
+#Requires BSgenome object
+#source("https://bioconductor.org/biocLite.R")
+#biocLite("BSgenome.Hsapiens.UCSC.hg19")
+
+library(BSgenome.Hsapiens.UCSC.hg19)
+
+#############################
+# mutations in EBV+ patients
+#############################
+
+mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs_indels.30_minus_GZ222_and_GZ229_and_GZ310.incl_silent_and_UTR.EBER_pos.maf")
+
+laml.tnm <- trinucleotideMatrix(maf = mutations.maf, prefix = 'chr', add = TRUE, ignoreChr = "chr23", 
+                                ref_genome = "BSgenome.Hsapiens.UCSC.hg19")
+
+
+
+
+#############################
+# all mutations (full cohort)
+#############################
+
+# read in MAF file
+mutations.all.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs_indels.30_minus_GZ222_and_GZ229.default_and_optimized.incl_silent_and_UTR.maf")
+#mutations.all.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs_indels.30_minus_GZ222_and_GZ229_and_GZ310.default_and_optimized.incl_silent_and_UTR.maf")
+
+# first, extract adjacent bases to the mutated locus and classify them into 96 subsitution classes
+laml.tnm.all_samples <- trinucleotideMatrix(maf = mutations.all.maf, 
+                                            prefix = 'chr', 
+                                            add = TRUE,
+                                            ignoreChr = "chr23",
+                                            ref_genome = "BSgenome.Hsapiens.UCSC.hg19")
+
+#Extracting 5' and 3' adjacent bases..
+#Extracting +/- 20bp around mutated bases for background C>T estimation..
+#Estimating APOBEC enrichment scores.. 
+#Performing one-way Fisher's test for APOBEC enrichment..
+#APOBEC related mutations are enriched in 3.191% of samples (APOBEC enrichment score > 2 ; 3 of 94 samples)
+#Creating mutation matrix..
+#matrix of dimension 95x96
+
+#write.table(laml.tnm.all_samples, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/results/minus_GZ222_and_GZ229.incl_silent_and_UTR/trinucleotideMatrix.txt", sep = "\t", quote = FALSE)
+write.table(laml.tnm.all_samples, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/results/minus_GZ222_and_GZ229_and_GZ310.incl_silent_and_UTR/trinucleotideMatrix.txt", sep = "\t", quote = FALSE)
+
+# analyze differences between APOBEC enriched and non-enriched samples
+plotApobecDiff(tnm = laml.tnm.all_samples, maf = mutations.all.maf)
+
+# extractSignatures uses a non-negative matrix factorization to decompose m samples x 96 matrix into r signatures.
+laml.sign.all_samples <- extractSignatures(mat = laml.tnm.all_samples, plotBestFitRes = FALSE)
+
+# with GZ310 mutations
+
+#Using 4 as a best-fit rank based on decreasing cophenetic correlation coefficient.
+#Comparing against experimentally validated 30 signatures.. (See http://cancer.sanger.ac.uk/cosmic/signatures for details.)
+#Found Signature_1 most similar to validated Signature_5. Aetiology: Unknown [cosine-similarity: 0.673] 
+#Found Signature_2 most similar to validated Signature_2. Aetiology: APOBEC Cytidine Deaminase (C>T) [cosine-similarity: 0.712] 
+#Found Signature_3 most similar to validated Signature_1. Aetiology: spontaneous deamination of 5-methylcytosine [cosine-similarity: 0.911] 
+#Found Signature_4 most similar to validated Signature_1. Aetiology: spontaneous deamination of 5-methylcytosine [cosine-similarity: 0.839] 
+
+# with*out* GZ310 mutations
+
+#Using 3 as a best-fit rank based on decreasing cophenetic correlation coefficient.
+#Comparing against experimentally validated 30 signatures.. (See http://cancer.sanger.ac.uk/cosmic/signatures for details.)
+#Found Signature_1 most similar to validated Signature_19. Aetiology: Unknown [cosine-similarity: 0.706] 
+#Found Signature_2 most similar to validated Signature_1. Aetiology: spontaneous deamination of 5-methylcytosine [cosine-similarity: 0.902] 
+#Found Signature_3 most similar to validated Signature_30. Aetiology: Unknown [cosine-similarity: 0.684] 
+
+write.table(laml.sign.all_samples$signatures, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/results/minus_GZ222_and_GZ229.incl_silent_and_UTR/signatures.txt", sep = "\t", quote = FALSE)
+
+write.table(laml.sign.all_samples$contributions, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/results/minus_GZ222_and_GZ229.incl_silent_and_UTR/contributions.txt", sep = "\t", quote = FALSE)
+
+write.table(laml.sign.all_samples$coSineSimMat, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/results/minus_GZ222_and_GZ229.incl_silent_and_UTR/coSineSimMat.txt", sep = "\t", quote = FALSE)
+
+#write.table(laml.sign.all_samples$signatures, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/results/minus_GZ222_and_GZ229_and_GZ310.incl_silent_and_UTR/signatures.txt", sep = "\t", quote = FALSE)
+
+#write.table(laml.sign.all_samples$contributions, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/results/minus_GZ222_and_GZ229_and_GZ310.incl_silent_and_UTR/contributions.txt", sep = "\t", quote = FALSE)
+
+#write.table(laml.sign.all_samples$coSineSimMat, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/results/minus_GZ222_and_GZ229_and_GZ310.incl_silent_and_UTR/coSineSimMat.txt", sep = "\t", quote = FALSE)
+
+# plot signatures
+plotSignatures(laml.sign.all_samples, title_size = 1.2)
+plotSignatures(laml.sign.all_samples, contributions = TRUE, font_size = 0.8, show_barcodes = FALSE)
+
+library(pheatmap)
+pheatmap::pheatmap(mat = laml.sign.all_samples$coSineSimMat, cluster_rows = FALSE, 
+                   main = "cosine similarity against validated signatures")
+
+# signature enrichment analysis
+laml.se.all_samples = signatureEnrichment(maf = mutations.all.maf, sig_res = laml.sign.all_samples)
+plotEnrichmentResults(enrich_res = laml.se.all_samples, pVal = 0.05)
+
+# look at comparison of similarities of detected signatures against validated signatures
+library(corrplot)
+corrplot::corrplot(corr = laml.sign.all_samples$coSineSimMat, 
+                   col = RColorBrewer::brewer.pal(n = 9, name = 'Blues'),
+                   is.corr = FALSE, 
+                   tl.cex = 0.6, 
+                   tl.col = 'black', 
+                   cl.cex = 0.6)
+
+```
+
+
+## Plot contributions of signatures
+
+```{r}
+library(ggplot2)
+library(tidyr)
+
+data.contrib <- as.data.frame(t(laml.sign.all_samples$contributions))
+data.contrib$patient <- row.names(data.contrib)
+
+# convert from wide to long
+data.contrib.long <- gather(data.contrib, signature, contribution, Signature_1:Signature_4, factor_key = TRUE)
+
+p <- ggplot() + 
+  geom_bar(aes(y = contribution, x = patient, fill = signature), data = data.contrib.long, stat="identity") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5))
+
+
+```
