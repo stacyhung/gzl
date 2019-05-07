@@ -222,76 +222,111 @@ library(pheatmap)
 pheatmap::pheatmap(mat = laml.sign.eber_neg$coSineSimMat, cluster_rows = FALSE, 
                    main = "cosine similarity against validated signatures")
 
-
-
-#############################
-# all mutations (full cohort)
-#############################
-
-# read in MAF file
-mutations.all.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs_indels.30_minus_GZ222_and_GZ229.default_and_optimized.incl_silent_and_UTR.maf")
-mutations.all.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs_indels.30_minus_GZ222_and_GZ229_and_GZ310.default_and_optimized.incl_silent_and_UTR.maf")
-
-# first, extract adjacent bases to the mutated locus and classify them into 96 subsitution classes
-laml.tnm.all_samples <- trinucleotideMatrix(maf = mutations.all.maf, 
-                                            prefix = 'chr', 
-                                            add = TRUE,
-                                            ignoreChr = "chr23",
-                                            ref_genome = "BSgenome.Hsapiens.UCSC.hg19")
-
-write.table(laml.tnm.all_samples, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/results/minus_GZ222_and_GZ229_and_GZ310.incl_silent_and_UTR/trinucleotideMatrix.txt", sep = "\t", quote = FALSE)
-
-# analyze differences between APOBEC enriched and non-enriched samples
-plotApobecDiff(tnm = laml.tnm.all_samples, maf = mutations.all.maf)
-
-# extractSignatures uses a non-negative matrix factorization to decompose m samples x 96 matrix into r signatures.
-laml.sign.all_samples <- extractSignatures(mat = laml.tnm.all_samples, plotBestFitRes = FALSE)
-
-write.table(laml.sign.all_samples$signatures, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/results/minus_GZ222_and_GZ229.incl_silent_and_UTR/signatures.txt", sep = "\t", quote = FALSE)
-
-write.table(laml.sign.all_samples$contributions, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/results/minus_GZ222_and_GZ229.incl_silent_and_UTR/contributions.txt", sep = "\t", quote = FALSE)
-
-write.table(laml.sign.all_samples$coSineSimMat, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/results/minus_GZ222_and_GZ229.incl_silent_and_UTR/coSineSimMat.txt", sep = "\t", quote = FALSE)
-
-# plot signatures
-plotSignatures(laml.sign.all_samples, title_size = 1.2)
-plotSignatures(laml.sign.all_samples, contributions = TRUE, font_size = 0.8, show_barcodes = FALSE)
-
-library(pheatmap)
-pheatmap::pheatmap(mat = laml.sign.all_samples$coSineSimMat, cluster_rows = FALSE, 
-                   main = "cosine similarity against validated signatures")
-
-# signature enrichment analysis
-laml.se.all_samples = signatureEnrichment(maf = mutations.all.maf, sig_res = laml.sign.all_samples)
-plotEnrichmentResults(enrich_res = laml.se.all_samples, pVal = 0.05)
-
-# look at comparison of similarities of detected signatures against validated signatures
-library(corrplot)
-corrplot::corrplot(corr = laml.sign.all_samples$coSineSimMat, 
-                   col = RColorBrewer::brewer.pal(n = 9, name = 'Blues'),
-                   is.corr = FALSE, 
-                   tl.cex = 0.6, 
-                   tl.col = 'black', 
-                   cl.cex = 0.6)
-
 ```
 
-
-## Plot contributions of signatures
+## Plot contributions of signatures (ggplot2 version)
 
 ```{r}
 library(ggplot2)
 library(tidyr)
 
-data.contrib <- as.data.frame(t(laml.sign.all_samples$contributions))
+data.contrib <- as.data.frame(t(laml.sign.eber_pos$contributions))
 data.contrib$patient <- row.names(data.contrib)
 
 # convert from wide to long
-data.contrib.long <- gather(data.contrib, signature, contribution, Signature_1:Signature_4, factor_key = TRUE)
+data.contrib.long <- gather(data.contrib, signature, contribution, Signature_1:Signature_3, factor_key = TRUE)
 
 p <- ggplot() + 
   geom_bar(aes(y = contribution, x = patient, fill = signature), data = data.contrib.long, stat="identity") +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5))
 
+```
+
+## MutationalPatterns - plot contribution of signatures based on number of mutations
+
+## Apply MutationalPatterns pkg to GZL data
+
+```{r}
+#library(BSgenome)
+library("BSgenome.Hsapiens.UCSC.hg19", character.only = TRUE)
+#source("https://bioconductor.org/biocLite.R")
+#biocLite("MutationalPatterns")
+library(MutationalPatterns) 
+
+ref_genome <- "BSgenome.Hsapiens.UCSC.hg19"
+
+# NB: this is based on references when running R in Rogue
+vcf_files <- list.files(path = "/data/projects/stacy/gzl_exomes/signature_analysis/input", pattern = "*.vcf", full.names = TRUE, all.files = TRUE)
+
+sample_names <- c("176T", "99T", "GZ_BCC_08_T_LMD", "GZ_BCC_13_T_LMD", "GZ_BCC_20_T_LMD", "GZ_BCC_54_T_LMD", "GZ044T-merged", "GZ046T-merged", "GZ048T-merged", "GZ062T-merged", "GZ064T", "GZ068T-merged", "GZ092_TLMD_2", "GZ095_TLMD_2", "GZ116T", "GZ149TLMD", "GZ152T-merged", "GZ178T", "GZ180_FFPE", "GZ184TLMD", "GZ197_TLMD", "GZ230T", "GZ235T", "GZ267T-merged", "GZ294T", "GZ301T", "GZ310T", "GZ32TLMD", "GZ86TLMD")
+
+vcf <- read_vcfs_as_granges(vcf_files = vcf_files, sample_names = sample_names, ref_genome)
+
+### 96 mutational profile
+
+mut_mat <- mut_matrix(vcf_list = vcf, ref_genome = ref_genome)
+
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/plot_96_profile-all_samples-condensed.pdf") 
+#plot_96_profile(mut_mat)
+plot_96_profile(mut_mat,condensed = TRUE)
+dev.off() 
+
+### de novo mutational signature extraction using NMF
+
+# first add a small pseudocount to mutation count matrix
+mut_mat <- mut_mat + 0.0001
+
+# use the NMF package to generate an estimate rank plot
+library(NMF)
+estimate <- nmf(mut_mat, rank = 2:5, method = "brunet", nrun = 10, seed = 123456) # doesn't work on Rogue
+
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/plot_estimate.pdf") 
+plot(estimate)
+dev.off() 
+
+# based on ranking survey plots, optimal rank is 3 (cophentic cofficient starts dropping and RSS inflects at 3)
+# perform a relative large number iterations to achieve stability and avoid local minima
+nmf_res <- extract_signatures(mut_mat, rank = 3, nrun = 100)
+
+# assign signature names:
+colnames(nmf_res$signatures) <- c("GZ Signature A", "GZ Signature B", "GZ Signature C")
+rownames(nmf_res$contribution) <- c("GZ Signature A", "GZ Signature B", "GZ Signature C")
+
+# plot the 96-profile of the signatures
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/plot_96_profile.pdf") 
+plot_96_profile(nmf_res$signatures, condensed = TRUE)
+dev.off() 
+
+# visualize the contribution of the signatures in a barplot
+pc1 <- plot_contribution(nmf_res$contribution, nmf_res$signature, mode = "relative", coord_flip=TRUE)
+# visualize the contribution in absolute number of mutations
+pc2 <- plot_contribution(nmf_res$contribution, nmf_res$signature, mode = "absolute", coord_flip=TRUE)
+
+# combine the two plots
+library(gridExtra)
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/signature-relative_and_absoluate_contributions.pdf") 
+grid.arrange(pc1, pc2)
+dev.off()
+
+# Plot signature contribution as a heatmap with sample clustering dendogram and specified signature order:
+pch1 <- plot_contribution_heatmap(nmf_res$contribution, sig_order = c("GZ Signature A", "GZ Signature B", "GZ Signature C"))
+# plot signature contribution as a heatmap without sample clustering
+pch2 <- plot_contribution_heatmap(nmf_res$contribution, cluster_samples=FALSE)
+
+# combine plots into one figure
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/signature-heatmap_contributions.pdf") 
+grid.arrange(pch1, pch2)
+dev.off()
+
+# compare reconstructed mutational profile with original mutational profile
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/comparison_of_profiles.pdf") 
+plot_compare_profiles(mut_mat[,1], nmf_res$reconstructed[,1], profile_names = c("Original", "Reconstructed"), condensed = TRUE)
+dev.off()
+
+## COSMIC mutational signatures
+
 
 ```
+
+
+
