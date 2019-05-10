@@ -162,8 +162,10 @@ eber_neg.fit_res <- fit_to_signatures(eber_neg.mut_mat, cancer_signatures)
 
 # plot optimal contribution of the COSMIC signatures in each sample as stacked barplot
 # first select signatures with some contribution
-eber_pos.select <- which (rowSums(eber_pos.fit_res$contribution) > 10)
-eber_neg.select <- which (rowSums(eber_neg.fit_res$contribution) > 10)
+# rowSums is related to number of samples - for eber_pos, this would average to > c~4 per sample (30/7)
+eber_pos.select <- which (rowSums(eber_pos.fit_res$contribution) > 20)
+# for eber_neg, this would average to 130/22 = ~6
+eber_neg.select <- which (rowSums(eber_neg.fit_res$contribution) > 130)
 
 # plot contribution barplot
 pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/eber_groups/eber_pos.COSMIC_contributions-per_sample.pdf", width = 12, height = 4)
@@ -188,6 +190,83 @@ plot_contribution(fit_res$contribution[select,], cancer_signatures[,select], coo
 dev.off()
 
 # Customize contribution plot with own colours and selected signatures
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/eber_groups/eber_pos.COSMIC_optimal_abs_contributions-per_sample_v3.pdf", width = 12, height = 4)
+plot_contribution_stacy(eber_pos.fit_res$contribution[eber_pos.select,], cancer_signatures[,eber_pos.select], coord_flip = TRUE, mode = "absolute", 
+                  palette = c("black", "blue", "orange", "yellow",
+                              "green", "orchid", "dark grey", "red", "grey", "light grey"),
+                  names = c("1: Aging", 
+                            "3: failed DSB HR", 
+                            "6: defective DNA mismatch repair", 
+                            "7: UV exposure", 
+                            "9: somatic hypermutation", 
+                            "10: error-prone polymerase POLE", 
+                            "12: unknown", 
+                            "15: defective DNA mismatch repair", 
+                            "19: unknown", 
+                            "30: unknown"))
+dev.off()
+
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/eber_groups/eber_pos.COSMIC_optimal_relative_contributions-per_sample_v3.pdf", width = 12, height = 4)
+plot_contribution_stacy(eber_pos.fit_res$contribution[eber_pos.select,], cancer_signatures[,eber_pos.select], coord_flip = TRUE, mode = "relative", 
+                  palette = c("black", "blue", "orange", "yellow",
+                              "green", "orchid", "dark grey", "red", "grey", "light grey"),
+                  names = c("1: Aging", 
+                            "3: failed DSB HR", 
+                            "6: defective DNA mismatch repair", 
+                            "7: UV exposure", 
+                            "9: somatic hypermutation", 
+                            "10: error-prone polymerase POLE", 
+                            "12: unknown", 
+                            "15: defective DNA mismatch repair", 
+                            "19: unknown", 
+                            "30: unknown"))
+dev.off()
+
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/eber_groups/eber_pos.COSMIC_optimal_relative_contributions-per_sample_v2.pdf", width = 12, height = 4)
+plot_contribution_stacy(eber_pos.fit_res$contribution[eber_pos.select,], cancer_signatures[,eber_pos.select], coord_flip = TRUE, mode = "relative", 
+                  palette = c("black", "blue", "orange", "yellow", "red", "grey"),
+                  names = c("1: Aging", "3: failed DSB HR", "6: defective DNA mismatch repair", "7: UV exposure", "15: defective DNA mismatch repair", "30: unknown"))
+dev.off()
+
+# and finally eber neg based on a strict cutoff of 130
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/eber_groups/eber_neg.COSMIC_optimal_relative_contributions-per_sample_v2.pdf", width = 12, height = 8)
+plot_contribution_stacy(eber_neg.fit_res$contribution[eber_neg.select,], cancer_signatures[,eber_neg.select], coord_flip = TRUE, mode = "relative", 
+                  palette = c("black", "blue", "dark grey", 
+                              "orange", "yellow", "green", 
+                              "purple", "dark green", "red", "grey"),
+                  names = c("1: Aging", 
+                            "3: failed DSB HR", 
+                            "5: unknown",
+                            "6: defective DNA mismatch repair", 
+                            "7: UV exposure", 
+                            "9: somatic hypermutation",
+                            "11: alkylating agents",
+                            "13: AID/APOBEC activity",
+                            "15: defective DNA mismatch repair", 
+                            "16: unknown"))
+dev.off()
+
+
+eber_neg.mut_mat_minus_310 <- eber_neg.mut_mat[, -(21)]
+eber_neg.fit_res_minus_310 <- fit_to_signatures(eber_neg.mut_mat_minus_310, cancer_signatures)
+
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/eber_groups/eber_neg.COSMIC_optimal_abs_contributions-per_sample_minus_310_v2.pdf", width = 12, height = 8)
+plot_contribution_stacy(eber_neg.fit_res_minus_310$contribution[eber_neg.select,], cancer_signatures[,eber_neg.select], coord_flip = TRUE, mode = "absolute", 
+                  palette = c("black", "blue", "dark grey", 
+                              "orange", "yellow", "green", 
+                              "purple", "dark green", "red", "grey"),
+                  names = c("1: Aging", 
+                            "3: failed DSB HR", 
+                            "5: unknown",
+                            "6: defective DNA mismatch repair", 
+                            "7: UV exposure", 
+                            "9: somatic hypermutation",
+                            "11: alkylating agents",
+                            "13: AID/APOBEC activity",
+                            "15: defective DNA mismatch repair", 
+                            "16: unknown"))
+dev.off()
+
 
 ```
 
@@ -196,12 +275,12 @@ dev.off()
 ## Plot contribution function
 
 ```{r}
-plot_contribution = function(contribution,
+plot_contribution_stacy = function(contribution,
                                 signatures,
                                 index=c(),
                                 coord_flip=FALSE,
                                 mode="relative",
-                                palette=c())
+                                palette=c(), names=c())
 {
     # check mode parameter
     if(!(mode == "relative" | mode == "absolute"))
@@ -227,7 +306,7 @@ plot_contribution = function(contribution,
                             y = Contribution,
                             fill = factor(Signature),
                             order = Sample)) +
-            geom_bar(position = "fill", stat="identity", colour="black")  +
+            geom_bar(position = "fill", stat="identity")  +
             # ylabel
             labs(x = "", y = "Relative contribution") +
             # white background
@@ -260,7 +339,7 @@ plot_contribution = function(contribution,
                                             y = Contribution,
                                             fill = factor(Signature),
                                             order = Sample)) + 
-            geom_bar(stat="identity", colour = "black")  +  
+            geom_bar(stat="identity")  +  
             # ylabel
             labs(x = "", y = "Absolute contribution \n (no. mutations)") +  
             # white background
@@ -273,8 +352,8 @@ plot_contribution = function(contribution,
     }
 
     # Allow custom color palettes.
-    if (length(palette) > 0)
-        plot = plot + scale_fill_manual(name="Signature", values=palette)
+    if (length(palette) > 0 | length(names) > 0)
+        plot = plot + scale_fill_manual(name="Signature", values=palette, labels=names)
     else
         plot = plot + scale_fill_discrete(name="Signature")
 
@@ -286,5 +365,6 @@ plot_contribution = function(contribution,
                 
     return(plot)
 }
+
 ```
 

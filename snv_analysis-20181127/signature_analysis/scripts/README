@@ -1,0 +1,10 @@
+To run maf2vcf.pl requires the installation of the following components:
+
+1. Bio::DB::HTS::Tabix --> type in sudo cpanm Bio::DB::HTS::Tabix
+2. HTSlib (http://www.htslib.org/download/) - done - should be installed to /usr/local/bin
+3. VEP databases (local cache for greater efficiency): /Users/shung/.vep
+
+	Potentially useful database to have downloaded to cache
+	295 : homo_sapiens_merged_vep_96_GRCh37.tar.gz (NB: Remember to use --merged when running the VEP with this cache!)
+	297 : homo_sapiens_refseq_vep_96_GRCh37.tar.gz
+	299 : homo_sapiens_vep_96_GRCh37.tar.gzl
