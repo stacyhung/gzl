@@ -41,6 +41,63 @@ library(dplyr)
 library(plyr)
 ```
 
+## Transform GISTIC data into MAF format so that it can be used for oncoplot
+
+```{r}
+library(tidyr)
+
+gistic.heatmap <- read.table("/Volumes/shung/projects/gzl_exomes/gistic/output/0.3_amp_0.3_del_0.98_focal_cutoff_2.5_cap_FINAL/for_R_oncoplot/selected_peaks_for_R_oncoplot.txt", sep = "\t", header = TRUE)
+
+# wide to long
+gistic.heatmap.long <- gather(gistic.heatmap, case, copy_number_change, GZ.BCC.020:GZ.229, factor_key = TRUE)
+
+# convert to maf format (add appropriate columns as needed)
+colnames(gistic.heatmap.long) <- c("Hugo_Symbol", "Tumor_Sample_Barcode", "Variant_Classification")
+
+write.table(gistic.heatmap.long, "/Volumes/shung/projects/gzl_exomes/gistic/output/0.3_amp_0.3_del_0.98_focal_cutoff_2.5_cap_FINAL/for_R_oncoplot/gistic.heatmap.long.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+```
+
+## GISTIC oncoplot
+
+```{r}
+library(maftools)
+
+#mut.df <- read.table("/Volumes/shung/projects/gzl_exomes/gistic/output/0.3_amp_0.3_del_0.98_focal_cutoff_2.5_cap_FINAL/for_R_oncoplot/selected_gistic_peaks_v2.maf", sep = "\t", header = TRUE)
+mut.df <- read.table("/Volumes/shung/projects/gzl_exomes/gistic/output/0.3_amp_0.3_del_0.98_focal_cutoff_2.5_cap_FINAL/for_R_oncoplot/test4.maf", sep = "\t", header = TRUE)
+
+# require fields: Hugo_Symbol, Tumor_Sample_Barcode, Variant_Classification, Chromosome, Start_Position, End_Position,  Tumor_Seq_Allele2, Reference_Allele, Variant_Type (only the first 3 fields need to have values)
+mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/gistic/output/0.3_amp_0.3_del_0.98_focal_cutoff_2.5_cap_FINAL/for_R_oncoplot/selected_gistic_peaks_v3.maf", 
+                          vc_nonSyn = c("High-level amplification", "Low-level amplification", 
+                                        "High-level deletion", "Low-level deletion"))
+
+# for oncoplot - want to display patients in same order as oncoplot-by_path_group.pdf
+patients.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/patients.ordered.CURRENT.txt")
+patients.ordered <- as.vector(patients.ordered$x)
+
+# for feature ordering (in this case, the features are gistic peaks with GOI), first order by CNA type (amplifications, then losses) and then by decreasing frequency across the cohort.
+features.ordered <- c("JAK2, CD274, PDCD1LG2 (9p24.1)", "USP18 (22q11.21)", "GTF2H2, NAIP (5q13.2)", "REL, BCL11A (2p16.1)", "SLX1B (16p11.2)", "PRMT6 (1p21.1)", "IRF5, RELN, LRRN3 (7q35)", "ATM (11q14.3)", "NCOR2 (12q24.33)", "CDKN2A, CDKN2B (9p21.3)")
+#features.ordered <- c("9p24.1", "22q11.21", "5q13.2", "2p16.1", "16p11.2", "1p21.1", "7q35", "11q14.3", "12q24.33", "9p21.3")
+#features.ordered <- c("JAK2, CD274, PDCD1LG2", "USP18", "GTF2H2, NAIP", "REL, BCL11A", "SLX1B", "PRMT6", "IRF5, RELN, LRRN3", "ATM", "NCOR2", "CDKN2A, CDKN2B")
+
+# change colours for variant classifications
+# light read --> R:243, G:191, B:181 or hex: #F3BFBF
+#vc_cols <- c("firebrick", "firebrick1", "grey", "slategrey3", "steelblue4")
+#names(vc_cols) <- c("Amplification", "Gain", "No change", "Heterozygous loss", "Homozygous loss")
+vc_cols <- c("firebrick", "#F3BFBF", "slategray3", "steelblue4")
+names(vc_cols) <- c("High-level amplification", "Low-level amplification", "Low-level deletion", "High-level deletion")
+
+oncoplot(maf = mutations.maf, drawRowBar = TRUE,
+         sampleOrder = patients.ordered,
+         genes = features.ordered, keepGeneOrder = TRUE,
+         colors = vc_cols,
+         legendFontSize = 1.5, SampleNamefontSize = 0.5, fontSize = 0.5,
+         showTumorSampleBarcodes = TRUE, 
+         titleFontSize = 0.01)
+
+# for future debugging: need to figure out why frequency bars on right-hand side are not showing up
+
+```
 
 ## Get list of genes to use for oncoplot
 
