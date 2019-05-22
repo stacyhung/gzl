@@ -66,95 +66,76 @@ mutated.primary <- unique(filter(mutated_cases.by_medstat_and_gene,
 mutated.non_primary <- unique(filter(mutated_cases.by_medstat_and_gene, 
                                  mutated_cases.by_medstat_and_gene$med_status != "Primary"))
 
-#mutated.group_0 <- unique(filter(mutated_cases.by_path_and_gene, mutated_cases.by_path_and_gene$Path_group == "0 = cHL"))
-#mutated.group_1_2 <- unique(filter(mutated_cases.by_path_and_gene, (mutated_cases.by_path_and_gene$Path_group == "1 = cHL-interm" | mutated_cases.by_path_and_gene$Path_group == "2 = LBCL-interm")))
-#mutated.group_3 <- unique(filter(mutated_cases.by_path_and_gene, mutated_cases.by_path_and_gene$Path_group == "3 = LBCL"))
-
 # get NUMBER OF CASES mutated per GROUP (to calculate normalized proportions)
 NUM_PRIMARY <- length(unique(mutated.primary$Tumor_Sample_Barcode))
 NUM_NONPRIMARY <- length(unique(mutated.non_primary$Tumor_Sample_Barcode))
 
-#NUM_GROUP_0 <- length(unique(mutated.group_0$Tumor_Sample_Barcode))
-#NUM_GROUP_1_2 <- length(unique(mutated.group_1_2$Tumor_Sample_Barcode))
-#NUM_GROUP_3 <- length(unique(mutated.group_3$Tumor_Sample_Barcode))
-
 # extract GENES mutated in each GROUP 
-num_mutated.by_gene.group_0 <- subset(mutated.table, mutated.table$Path_group == "0 = cHL" & mutated.table$num_mutated > 0)
-num_mutated.by_gene.group_1_and_2 <- subset(mutated.table, (mutated.table$Path_group == "1 = cHL-interm" | 
-                                       mutated.table$Path_group == "2 = LBCL-interm") & mutated.table$num_mutated > 0)
-# combine counts for group 1 and 2, since they are currently separate
-num_mutated.group_1_2.combined_counts <- as.data.frame(table(mutated.group_1_2$Hugo_Symbol))
-colnames(num_mutated.group_1_2.combined_counts) <- c("gene", "num_mutated")
-num_mutated.by_gene.group_3 <- subset(mutated.table, mutated.table$Path_group == "3 = LBCL" & mutated.table$num_mutated > 0)
+num_mutated.by_gene.primary <- subset(mutated.table, mutated.table$Med_status == "Primary" & mutated.table$num_mutated > 0)
+num_mutated.by_gene.non_primary <- subset(mutated.table, mutated.table$Med_status != "Primary" & mutated.table$num_mutated > 0)
 
 # calculate proportion of mutated cases
-num_mutated.by_gene.group_0$proportion <- num_mutated.by_gene.group_0$num_mutated / NUM_GROUP_0*100
-num_mutated.group_1_2.combined_counts$proportion <- num_mutated.group_1_2.combined_counts$num_mutated / NUM_GROUP_1_2*100
+num_mutated.by_gene.primary$proportion <- num_mutated.by_gene.primary$num_mutated / NUM_PRIMARY * 100
+num_mutated.by_gene.non_primary$proportion <- num_mutated.by_gene.non_primary$num_mutated / NUM_NONPRIMARY * 100
 
 PERCENT_MUTATED = 10
 
-# identify genes that fall are present in 10%+ of group 0, genes present in 10%+ of group 1+2, and all genes mutated in group 3
-num_mutated.pathgp.0_cutoff <- subset(num_mutated.by_gene.group_0, num_mutated.by_gene.group_0$proportion >= PERCENT_MUTATED)
-num_mutated.pathgp.1_2_cutoff <- subset(num_mutated.group_1_2.combined_counts, 
-                                        num_mutated.group_1_2.combined_counts$proportion >= PERCENT_MUTATED)
-pathgp_genes.10_plus <- unique(c(as.vector(num_mutated.pathgp.0_cutoff$gene),as.vector(num_mutated.pathgp.1_2_cutoff$gene),
-                                 as.vector(num_mutated.by_gene.group_3$gene)))
+# identify genes are present in 10%+ of primary mediastinal group, genes present in 10%+ of non-primary mediastinal group
+num_mutated.med_primary.cutoff <- subset(num_mutated.by_gene.primary, num_mutated.by_gene.primary$proportion >= PERCENT_MUTATED)
+num_mutated.med_nonprimary.cutoff <- subset(num_mutated.by_gene.non_primary, num_mutated.by_gene.non_primary$proportion >= PERCENT_MUTATED)
+med_status_genes.10_plus <- unique(c(as.vector(num_mutated.med_primary.cutoff$gene),
+                                               as.vector(num_mutated.med_nonprimary.cutoff$gene)))
 
-write.table(pathgp_genes.10_plus, "/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/pathgp_genes.10_plus.txt", quote = FALSE, row.names = FALSE)
+write.table(med_status_genes.10_plus, "/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/med_status_genes.10_plus.txt", quote = FALSE, row.names = FALSE)
 
 # create mutation matrix for filtered gene list
 mutations.df <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.mutated_target_panel.maf", sep = "\t", header = TRUE, fill = TRUE)
-mutations.df <- filter(mutations.df, mutations.df$Hugo_Symbol %in% pathgp_genes.10_plus)
-write.table(mutations.df, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.filtered_path_group.maf", sep = "\t", quote = FALSE, row.names = FALSE)
+mutations.df <- filter(mutations.df, mutations.df$Hugo_Symbol %in% med_status_genes.10_plus)
+write.table(mutations.df, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.filtered_med_status_group.maf", sep = "\t", quote = FALSE, row.names = FALSE)
 
 mutations.df$Hugo_Symbol <- factor(mutations.df$Hugo_Symbol)
 mutations.df <- unique(mutations.df[c("Hugo_Symbol", "Tumor_Sample_Barcode")])
 mutation.matrix <- table(mutations.df$Tumor_Sample_Barcode, mutations.df$Hugo_Symbol)
-write.table(mutation.matrix, "/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/mutation_matrix-path_groups_10+_freq_mutated.txt", sep = "\t", quote = FALSE)
+write.table(mutation.matrix, "/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/mutation_matrix-mediastinal_groups_10+_freq_mutated.txt", sep = "\t", quote = FALSE)
 ```
 
 ## Sort matrix
 
 ```{r}
 # for each gene, calculate number of mutated cases; and number of pathology group-specific cases
-mut.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/mutation_matrix-path_groups_10+_freq_mutated.with_path_group_and_sums.txt", sep = "\t", header = TRUE)
+mut.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/mutation_matrix-mediastinal_groups_10+_freq_mutated.with_group_and_sums.txt", sep = "\t", header = TRUE)
 
 # sort by each gene in their current order
-mut.data.sorted <- mut.data[with(mut.data, order(Path_group, -SOCS1, -B2M, -GNA13, -LRRN3, -CSMD3, -CSF2RB, -ITPKB, -NCOR1, -ZNF217, -IRF2BP2, -ARID1A, -EGR1, -IRF4, - LMF2, -PRKDC, -RELN, - SPEN, -ABCA13, -ABCC6, -C2CD3, -CD58, - CISH, - KCNQ3, -MFHAS1, -MLL2, -NFKBIE, -RC3H2, -SIAH2 , -STAT6, -TNFAIP3, -WEE1, -DHX58, -GRIA4, -ABCD2, -ADAP1, -AMOT, - BCL2, - BRWD3, -GRIN3A, -HIST1H1B, -MAPK6, -MCL1, -MSH6, -SETD1B, -SHISA6, -SPSB4, -USP5, -XCR1, -DIAPH3, -ARID5B, -FLT4, -NLRP4, -TAB1, -HIST1H1E, -NFKBIB, -POU2AF1, -ATM, -SPOP)), ]
+#mut.data.sorted <- mut.data[with(mut.data, order(Path_group, -SOCS1, -B2M, -GNA13, -LRRN3, -CSMD3, -CSF2RB, -ITPKB, -NCOR1, -ZNF217, -IRF2BP2, -ARID1A, -EGR1, -IRF4, - LMF2, -PRKDC, -RELN, - SPEN, -ABCA13, -ABCC6, -C2CD3, -CD58, - CISH, - KCNQ3, -MFHAS1, -MLL2, -NFKBIE, -RC3H2, -SIAH2 , -STAT6, -TNFAIP3, -WEE1, -DHX58, -GRIA4, -ABCD2, -ADAP1, -AMOT, - BCL2, - BRWD3, -GRIN3A, -HIST1H1B, -MAPK6, -MCL1, -MSH6, -SETD1B, -SHISA6, -SPSB4, -USP5, -XCR1, -DIAPH3, -ARID5B, -FLT4, -NLRP4, -TAB1, -HIST1H1E, -NFKBIB, -POU2AF1, -ATM, -SPOP)), ]
+
+mut.data.sorted <- mut.data[with(mut.data, order(mediastinal_involvement, -SOCS1, -B2M, -GNA13, -LRRN3, -CSMD3, -IRF2BP2, -CSF2RB, -ITPKB, -NCOR1, -ZNF217, -KCNQ3, -RELN, -ABCC6, -ARID1A, -C2CD3, -CD58, -EGR1, -IRF4, -LMF2, -PRKDC, -RC3H2, -SPEN, -STAT6, -WEE1, -ABCA13, -CISH, -MFHAS1, -MLL2, -NFKBIE, -SIAH2, -TNFAIP3, -ABCD2, -BRWD3, -DDX60, -DIAPH3, -GRIA4, -MAPK6, -MLL, -USP5, -XCR1, -ARHGAP29, -BTG1, -CD83, -CIITA, -DSC2, -DUSP2, -HDAC4, -HEXIM1, -HIST1H4C, -HIST1H4H, -IKBKB, -LTB, -NBPF6, -NF1, -NFATC3, -NFKBIA, -NONO, -NSD1, -PCBP1, -PIK3C2G, -POU4F3, -PRDM16, -RNF217, -SRSF2, -TBC1D4, -TNIP1, -WDFY3, -ZFP36L1, -ZNF423)), ]
 
 patients.ordered <- as.vector(mut.data.sorted$patient)
-write.table(patients.ordered, "/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/patients.ordered.CURRENT.txt", sep = "\t", quote = FALSE)
+write.table(patients.ordered, "/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/patients.ordered.CURRENT.txt", sep = "\t", quote = FALSE)
 
 mut.oncoplot <- t(mut.data.sorted)
 genes.ordered <- as.vector(row.names(mut.oncoplot))
 genes.ordered <- genes.ordered[ genes.ordered != "patient"]
-genes.ordered <- genes.ordered[ genes.ordered != "Path_group"]
-write.table(genes.ordered, "/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/genes.ordered.CURRENT.txt", sep = "\t", quote = FALSE)
+genes.ordered <- genes.ordered[ genes.ordered != "mediastinal_involvement"]
+write.table(genes.ordered, "/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/genes.ordered.CURRENT.txt", sep = "\t", quote = FALSE)
 
-write.table(mut.oncoplot, "/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/mutation_matrix-path_groups_10+_freq_mutated.oncoplot.txt", sep = "\t", quote = FALSE)
+write.table(mut.oncoplot, "/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/mutation_matrix-mediastinal_groups_10+_freq_mutated.oncoplot.txt", sep = "\t", quote = FALSE)
 
 ```
 
 ## Path group-specific oncoplots
 
 ```{r}
-# to get latest version of maftools, install from github
-library("devtools")
-install_github(repo = "PoisonAlien/maftools")
 library(maftools)
 
 clinical.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/GZ_WES_cases-clinical_data.with_updated_mediastinal_and_age.txt", sep = "\t", header = TRUE)
-clinical.data$Path_group <- revalue(clinical.data$Path_group, 
-                                          c("0 = cHL"="0_=_cHL",
-                                            "1 = cHL-interm"="1_=_cHL-interm",
-                                            "2 = LBCL-interm"="2_=_LBCL-interm",
-                                            "3 = LBCL"="3_=_LBCL"))
+#clinical.data$Path_group <- revalue(clinical.data$Path_group, c("0 = cHL"="0_=_cHL", "1 = cHL-interm"="1_=_cHL-interm", "2 = LBCL-interm"="2_=_LBCL-interm", "3 = LBCL"="3_=_LBCL"))
 
-mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/gzl_exomes-snvs_indels.filtered_path_group.with_REMOVE_gene.maf", clinicalData = clinical.data)
+mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.filtered_med_status_group.maf", clinicalData = clinical.data)
 
-genes.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/genes.ordered.CURRENT.txt")
+genes.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization//genes.ordered.CURRENT.txt")
 genes.ordered <- as.vector(genes.ordered$x)
-patients.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/patients.ordered.CURRENT.txt")
+patients.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/patients.ordered.CURRENT.txt")
 patients.ordered <- as.vector(patients.ordered$x)
 
 # colours for annotation tracks
@@ -170,9 +151,9 @@ annot.colors <- list(Gender = c("Female" = "palevioletred1", "Male" = "royalblue
 
 # show patients ordered by group, and mutations ordered by frequency
 # include "REMOVE" gene since the removeNonMutated parameter doesn't work (i.e. doesn't show non-mutated case when FALSE)
-genes.ordered <- c(genes.ordered, "REMOVE")
+#genes.ordered <- c(genes.ordered, "REMOVE")
 
-oncoplot(maf = mutations.maf, SampleNamefontSize = 0.6,
+oncoplot(maf = mutations.maf, SampleNamefontSize = 0.8,
          removeNonMutated = FALSE,
          sampleOrder = patients.ordered,
          genes = genes.ordered, 
