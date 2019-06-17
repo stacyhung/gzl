@@ -216,6 +216,8 @@ calls.all <- calls.all[keeps]
 # sort the calls by case, chr, then position
 calls.all <- unique(arrange(calls.all, tumor_id, chr, pos))
 
+calls.all$effect <- factor(calls.all$effect)
+
 # write the results to a text file
 write.table(calls.all, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/t_v_me.all/snvs_indels.GZ222_v_pooledN_ME.OPTIMIZED_thresholds.txt", sep = "\t", quote = FALSE, row.names = FALSE)
 ```
@@ -227,11 +229,11 @@ write.table(calls.all, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127
 ```{r}
 library(plyr)
 library(ggplot2)
+library(gridExtra)
 
-calls.ME_or_blood_normals.OPTIMIZED <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/optimized_thresholds-full_exome_cohort/snvs.all.intersect-ME_or_blood_normal-OPTIMIZED_thresholds.txt", sep = "\t", header = TRUE, fill = TRUE)
-calls.ME_or_blood_normals.DEFAULT <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/optimized_thresholds-full_exome_cohort/snvs.all.intersect-ME_or_blood_normal-DEFAULT_thresholds.txt", sep = "\t", header = TRUE, fill = TRUE)
+calls.all <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/t_v_me.all/snvs_indels.GZ222_v_pooledN_ME.OPTIMIZED_thresholds.txt", sep = "\t", header = TRUE, fill = TRUE)
 
-calls.ME_or_blood_normals.OPTIMIZED$class <- revalue(calls.ME_or_blood_normals.OPTIMIZED$effect, c("NON_SYNONYMOUS_CODING"="Missense", 
+calls.all$class <- revalue(calls.all$effect, c("NON_SYNONYMOUS_CODING"="Missense", 
                            "NON_SYNONYMOUS_START"="Missense",
                            "START_LOST"="Start Lost",
                            "STOP_LOST"="Missense",
@@ -253,33 +255,10 @@ calls.ME_or_blood_normals.OPTIMIZED$class <- revalue(calls.ME_or_blood_normals.O
                            "UTR_5_PRIME"="5' UTR"
                            ))
 
-calls.ME_or_blood_normals.DEFAULT$class <- revalue(calls.ME_or_blood_normals.DEFAULT$effect, c("NON_SYNONYMOUS_CODING"="Missense", 
-                           "NON_SYNONYMOUS_START"="Missense",
-                           "START_LOST"="Start Lost",
-                           "STOP_LOST"="Missense",
-                           "STOP_GAINED"="Nonsense",
-                           "CODON_CHANGE_PLUS_CODON_DELETION"="In-frame Indel",
-                           "CODON_CHANGE_PLUS_CODON_INSERTION"="In-frame Indel",
-                           "CODON_DELETION"="In-frame Indel",
-                           "CODON_INSERTION"="In-frame Indel",
-                           "FRAME_SHIFT"="Frameshift Indel",
-                           "FRAME_SHIFT+SPLICE_SITE_ACCEPTOR"="Frameshift Indel",
-                           "FRAME_SHIFT+SPLICE_SITE_DONOR"="Frameshift Indel",
-                           "FRAME_SHIFT+STOP_GAINED"="Frameshift Indel",
-                           "SPLICE_SITE_ACCEPTOR+CODON_CHANGE_PLUS_CODON_DELETION"="In-frame Indel",
-                           "SPLICE_SITE_DONOR+CODON_CHANGE_PLUS_CODON_DELETION"="In-frame Indel",
-                           "STOP_LOST+CODON_DELETION"="In-frame Indel",
-                           "SPLICE_SITE_ACCEPTOR"="Splice site",
-                           "SPLICE_SITE_DONOR"="Splice site",
-                           "UTR_3_PRIME"="3' UTR",
-                           "UTR_5_PRIME"="5' UTR"
-                           ))
-
-
-data.df <- as.data.frame(table(calls.ME_or_blood_normals.OPTIMIZED$tumor_id, calls.ME_or_blood_normals.OPTIMIZED$class))
+data.df <- as.data.frame(table(calls.all$tumor_id, calls.all$class))
 colnames(data.df) <- c("sample", "variant_class", "count")
 
-p <- ggplot(data = data.df, aes(x = sample, y = count, fill = variant_class)) + 
+p1 <- ggplot(data = data.df, aes(x = sample, y = count, fill = variant_class)) + 
   geom_bar(stat = "identity", width = 0.6) + 
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
   scale_fill_discrete(name = "Variant Class") +
@@ -289,34 +268,20 @@ p <- ggplot(data = data.df, aes(x = sample, y = count, fill = variant_class)) +
 
 # same plot, but without UTR mutations
 UTR_mutations <- c("UTR_3_PRIME", "UTR_5_PRIME")
-calls.subset <- subset(calls.ME_or_blood_normals.OPTIMIZED, !(calls.ME_or_blood_normals.OPTIMIZED$effect %in% UTR_mutations))
+calls.subset <- subset(calls.all, !(calls.all$effect %in% UTR_mutations))
 calls.subset$effect <- factor(calls.subset$effect)
 calls.subset$class <- factor(calls.subset$class)
 #calls.subset$effect <- factor(calls.subset$effect)
 data.df <- as.data.frame(table(calls.subset$tumor_id, calls.subset$class))
 colnames(data.df) <- c("sample", "variant_class", "count")
 
-p <- ggplot(data = data.df, aes(x = sample, y = count, fill = variant_class)) + 
+p2<- ggplot(data = data.df, aes(x = sample, y = count, fill = variant_class)) + 
   geom_bar(stat = "identity", width = 0.6) + 
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
   scale_fill_discrete(name = "Variant Class") +
   xlab("") + ylab("Number of mutations")
 
-# barplot comparing total mutations per sample between default and optimized datasets
-num_calls.optimized <- as.data.frame(table(calls.ME_or_blood_normals.OPTIMIZED$tumor_id))
-num_calls.optimized$thresholds <- "Optimized"
-num_calls.default <- as.data.frame(table(calls.ME_or_blood_normals.DEFAULT$tumor_id))
-num_calls.default$thresholds <- "Default"
-
-num_calls.combined <- rbind(num_calls.default, num_calls.optimized)
-colnames(num_calls.combined) <- c("sample", "num_mutations", "thresholds")
-
-p <- ggplot(data = num_calls.combined, aes(x = sample, y = num_mutations, fill = thresholds)) + 
-  geom_bar(stat = "identity", width = 0.6, position = position_dodge()) + 
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  scale_fill_discrete(name = "Thresholds") +
-  xlab("") + ylab("Number of mutations")
-
+grid.arrange(p1, p2, ncol=2)
 
 ```
 
@@ -327,48 +292,32 @@ library(gridExtra)
 library(gtable)
 library(ggplot2)
 
-# for each sample, create AF density plot with vertical at peak value
-AF.plots <- vector('list', length(unique(calls.all$tumor_id)))
-for (i in seq_along(unique(calls.all$tumor_id))) {
-  temp <- subset(calls.all, calls.all$tumor_id == unique(calls.all$tumor_id)[i])
+# filter out variants that are between 40 and 60% and estimate tumor content based on the resulting VAFs
+calls.all <- filter(calls.all, calls.all$allele_freq_tumor < 30 | calls.all$allele_freq_tumor > 60)
+
+# filter out dbSNP variants
+calls.all <- calls.all[! grepl("rs", calls.all$external_id), ]
+
+num_mutations <- nrow(calls.all)
   
-  num_mutations <- nrow(temp)
+# identify peak value for current sample
+max_y_density <- which.max(density(calls.all$allele_freq_tumor)$y)
+max_x_intercept <- density(calls.all$allele_freq_tumor)$x[max_y_density]
+max_y_intercept <- density(calls.all$allele_freq_tumor)$y[max_y_density]
   
-  # identify peak value for current sample
-  max_y_density <- which.max(density(temp$allele_freq_tumor)$y)
-  max_x_intercept <- density(temp$allele_freq_tumor)$x[max_y_density]
-  max_y_intercept <- density(temp$allele_freq_tumor)$y[max_y_density]
+print(max_y_intercept)
   
-  print(max_y_intercept)
-  
-  AF.plots[[i]] <- ggplot(temp, aes(as.numeric(allele_freq_tumor))) + 
+p1 <- ggplot(calls.all, aes(as.numeric(allele_freq_tumor))) + 
     geom_density() +
     geom_vline(xintercept = max_x_intercept, col="red", lty=2) +
     xlab("Allele frequency (%)") + ylab("Density") +
     annotate("text", 
              y = max_y_intercept+0.2*max_y_intercept,
-             x = max(temp$allele_freq_tumor),
+             x = max(calls.all$allele_freq_tumor),
              label = paste("Peak AF: ", round(max_x_intercept, digits = 2), "%", sep = ""),
              hjust = 1) + 
     theme(axis.title.x = element_blank(), axis.title.y = element_blank()) +
     ylim(0, max_y_intercept+0.25*max_y_intercept) +
-    ggtitle(label = paste(temp$tumor_id, " (n = ", num_mutations, ")", sep = ""))
-}
-#do.call("grid.arrange", c(AF.plots, ncol=1))
-grid.arrange(grobs = AF.plots, ncol=3, bottom = "Allele frequency (%)", left = "Density")
-
-#y = max(density(temp$allele_freq_tumor)$y),
-
-# plot all samples
-p <- ggplot(calls.all, aes(as.numeric(allele_freq_tumor), colour = tumor_id)) + 
-  geom_density() + 
-  xlab ("Allele frequency (%)") + 
-  ylab("Density")
-
-# faceted plot (one distribution per sample)
-p + facet_grid(tumor_id ~ ., scales = "free")
-
-# or organize plots into 2 columns
-p + facet_wrap(~ tumor_id, ncol=2)
+    ggtitle(label = paste(calls.all$tumor_id, " (n = ", num_mutations, ")", " - no germline filters", sep = ""))
 
 ```
