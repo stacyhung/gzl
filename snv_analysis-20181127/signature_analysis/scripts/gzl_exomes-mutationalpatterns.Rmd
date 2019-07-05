@@ -50,12 +50,10 @@ type_occurrences <- mut_type_occurrences(vcf, ref_genome)
 p1 <- plot_spectrum(type_occurrences)
 # plot mutation spectrum with distinction between C>T at CpG sites and other sites
 p2 <- plot_spectrum(type_occurrences, CT=TRUE)
-# plot spectrum without legend
-p3 <- plot_spectrum(type_occurrences, CT = TRUE, legend = FALSE)
 # combine the plots
 library(gridExtra)
-pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/28_samples/mutation_spectrum.pdf", width=8, height = 4) 
-grid.arrange(p1, p2, ncol=2, widths=c(4,4), heights=c(2,2))
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/30_samples/mutation_spectrum.pdf", width=6, height = 8) 
+grid.arrange(p1, p2, ncol=1, widths=c(4,4), heights=c(2,2))
 dev.off() 
 # facet by sample group - EBV
 p4 <- plot_spectrum(type_occurrences, by = metadata$EBV_status, CT = TRUE, legend = TRUE)
@@ -63,7 +61,7 @@ p4 <- plot_spectrum(type_occurrences, by = metadata$EBV_status, CT = TRUE, legen
 p5 <- plot_spectrum(type_occurrences, by = metadata$path_group, CT = TRUE, legend = TRUE)
 # facet by sample group - mediastinal involvement
 p6 <- plot_spectrum(type_occurrences, by = metadata$mediastinal_involvement, CT = TRUE, legend = TRUE)
-pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/28_samples/mutation_spectrum-facets.pdf", height = 14) 
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/30_samples/mutation_spectrum-facets.pdf", height = 14) 
 grid.arrange(p4, p5, p6, ncol=1, heights=c(3, 6, 3))
 dev.off() 
 
@@ -72,7 +70,7 @@ dev.off()
 # generate a 96-trinucleotide mutation count matrix
 mut_mat <- mut_matrix(vcf_list = vcf, ref_genome = ref_genome)
 # plot the 96 profile of all the samples
-pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/plot_96_profile-28_samples.pdf", height = 14) 
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/30_samples/plot_96_profile-30_samples.pdf", height = 24) 
 plot_96_profile(mut_mat)
 dev.off() 
 
@@ -92,7 +90,7 @@ mut_mat <- mut_mat + 0.0001
 # use the NMF package to generate an estimate rank plot
 estimate <- nmf(mut_mat, rank = 1:10, method = "brunet", nrun = 100, seed = 123456) # doesn't work on Rogue
 # plot the estimates
-pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/28_samples/plot_estimate.pdf") 
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/30_samples/plot_estimate.pdf") 
 plot(estimate); dev.off() 
 
 
@@ -103,28 +101,37 @@ nmf_res <- extract_signatures(mut_mat, rank = 2, nrun = 400)
 # assign signature names
 colnames(nmf_res$signatures) <- c("GZ Signature A", "GZ Signature B")
 rownames(nmf_res$contribution) <- c("GZ Signature A", "GZ Signature B")
-
+# print out contributions and signatures to output files
+write.table(nmf_res$contributions, "/data/projects/stacy/gzl_exomes/signature_analysis/output/28_samples_analysis/denovo-contributions.txt", sep = "\t", quote = FALSE)
+write.table(nmf_res$signature, "/data/projects/stacy/gzl_exomes/signature_analysis/output/28_samples_analysis/denovo-signatures.txt", sep = "\t", quote = FALSE)
 
 # plot the 96-profile of the signatures
 pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/28_samples/de_novo-plot_96_profile.pdf", height = 3.5) 
 plot_96_profile(nmf_res$signatures); dev.off() 
+
 # visualize the contribution of the signatures in a barplot
-pc1 <- plot_contribution(nmf_res$contribution, nmf_res$signature, mode = "relative", coord_flip=TRUE)
+# order by specific groups of interest (contribution is a 2X28 matrix where 2 = signatures; 28 = samples)
+col.order <- c("GZ-095", "GZ-BCC-020", "GZ-178", "GZ-048", "GZ-180", "GZ-BCC-013", "GZ-116", "GZ-099", "GZ-046", "GZ-BCC-054", "GZ-176", "GZ-184", "GZ-152", "GZ-044", "GZ-149", "GZ-092", "GZ-230", "GZ-086", "GZ-267", "GZ-068", "GZ-062", "GZ-197", "GZ-BCC-008", "GZ-235", "GZ-064", "GZ-294", "GZ-301", "GZ-032")
+nmf_res$contribution <- nmf_res$contribution[, col.order]
+
 # visualize the contribution in absolute number of mutations
-pc2 <- plot_contribution(nmf_res$contribution, nmf_res$signature, mode = "absolute", coord_flip=TRUE)
-# combine the two plots
-pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/28_samples/signature-relative_and_absoluate_contributions.pdf", width = 7, height = 11) 
-grid.arrange(pc1, pc2); dev.off()
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/28_samples/signature-absolute_contributions.pdf", width = 5, height = 5) 
+plot_contribution(nmf_res$contribution, nmf_res$signature, mode = "absolute", coord_flip=TRUE); dev.off()
+# visualize the contribution in relative number of mutations
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/28_samples/signature-relative_contributions.pdf", width = 5, height = 5) 
+plot_contribution(nmf_res$contribution, nmf_res$signature, mode = "relative", coord_flip=TRUE); dev.off()
 
 
 # Plot signature contribution as a heatmap with sample clustering dendogram and specified signature order:
-pch1 <- plot_contribution_heatmap(nmf_res$contribution, sig_order = c("GZ Signature A", "GZ Signature B"))
-# plot signature contribution as a heatmap without sample clustering
-pch2 <- plot_contribution_heatmap(nmf_res$contribution, cluster_samples=FALSE)
-# combine plots into one figure
-pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/28_samples/signature-heatmap_contributions.pdf") 
-grid.arrange(pch1, pch2); dev.off()
-
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/28_samples/signature-heatmap_contributions.pdf", width = 3, height = 8) 
+plot_contribution_heatmap(nmf_res$contribution, sig_order = c("GZ Signature A", "GZ Signature B"), cluster_samples=FALSE, plot_values=TRUE); dev.off()
+# calculate the relative contributions
+denovo.contributions <- as.matrix(read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/mutationalPatterns/output/28_samples_analysis/denovo-contributions.txt", sep = "\t", header = TRUE))
+# transpose
+denovo.contributions <- t(denovo.contributions)
+# relative contribution
+denovo.contrib.norm <- denovo.contributions / rowSums(denovo.contributions)
+write.table(denovo.contrib.norm, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/mutationalPatterns/output/28_samples_analysis/denovo-contributions.norm.txt", sep = "\t", quote = FALSE)
 
 # compare reconstructed mutational profile with original mutational profile
 pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/28_samples/comparison_of_profiles.pdf") 
@@ -159,7 +166,7 @@ plot(hcluster_cosmic); dev.off()
 # calculate pairwise cosine similarity between mutational profiles and COSMIC signatures
 cos_sim_denovo_signatures <- cos_sim_matrix(nmf_res$signatures, cancer_signatures)
 # plot heatmap of cosine similarities
-pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/28_samples/heatmap-COSMIC_vs_denovo_signatures.pdf", width = 8, height = 2) 
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/30_samples/heatmap-COSMIC_vs_denovo_signatures.pdf", width = 8, height = 2) 
 plot_cosine_heatmap (cos_sim_denovo_signatures, col_order = cosmic_order, cluster_rows = FALSE, plot_values=TRUE); dev.off()
 
 ## plot signature contribution as heatmap
@@ -170,7 +177,7 @@ pheatmap1 <- plot_contribution_heatmap(nmf_res$contribution, cluster_samples=FAL
 # calculate pairwise cosine similarity between mutational profiles and COSMIC signatures
 cos_sim_samples_signatures <- cos_sim_matrix(mut_mat, cancer_signatures)
 # plot heatmap with specific signature order
-pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/28_samples/heatmap-COSMIC_vs_GZ_signatures.pdf", width = 12, height = 7) 
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/30_samples/heatmap-COSMIC_vs_GZ_signatures.pdf", width = 12, height = 7) 
 plot_cosine_heatmap (cos_sim_samples_signatures, col_order = cosmic_order, cluster_rows = TRUE); dev.off()
 
 # Find optimal contribution of COSMIC signatures to reconstruct 96 mutational profiles
@@ -178,17 +185,55 @@ plot_cosine_heatmap (cos_sim_samples_signatures, col_order = cosmic_order, clust
 # fit mutation matrix to the COSMIC mutational signatures
 fit_res <- fit_to_signatures(mut_mat, cancer_signatures)
 # print contributions to output
-write.table(fit_res$contributions, "/data/projects/stacy/gzl_exomes/signature_analysis/output/28_samples_analysis/contributions.txt", sep = "\t", quote = FALSE)
+write.table(fit_res$contributions, "/data/projects/stacy/gzl_exomes/signature_analysis/output/30_samples_analysis/contributions.txt", sep = "\t", quote = FALSE)
 # print reconstructed to output
-write.table(fit_res$reconstructed, "/data/projects/stacy/gzl_exomes/signature_analysis/output/28_samples_analysis/reconstructed.txt", sep = "\t", quote = FALSE)
+write.table(fit_res$reconstructed, "/data/projects/stacy/gzl_exomes/signature_analysis/output/30_samples_analysis/reconstructed.txt", sep = "\t", quote = FALSE)
 
 # plot optimal contribution of the COSMIC signatures in each sample as stacked barplot
 # first select signatures with a minimum of X mutations (summed across all samples) contributing to that signature
-select <- which (rowSums(fit_res$contribution) >= 10)
+select <- which (rowSums(fit_res$contribution) >= 300)
+# plot cases by EBV status
+contributions.sorted <- as.matrix(read.table("/data/projects/stacy/gzl_exomes/signature_analysis/input/signatures_of_interest/optimal-contributions-sorted_by_EBER_and_num_mutations.txt", sep="\t",header=TRUE, row.names = 1))
 # plot contribution barplot
-pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/28_samples/COSMIC_contributions-per_sample.pdf", width = 12, height = 7)
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/30_samples/COSMIC_contributions-per_sample.sorted.pdf", width = 12, height = 7)
+#plot_contribution(fit_res$contribution[select,], cancer_signatures[,select], coord_flip = TRUE, mode = "absolute"); dev.off()
+plot_contribution(contributions.sorted[select,], cancer_signatures[,select], coord_flip = TRUE, mode = "absolute"); dev.off()
+# and the same plot, but for relative contributions
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/30_samples/COSMIC_relative_contributions-per_sample.sorted.pdf", width = 12, height = 7)
+plot_contribution(contributions.sorted[select,], cancer_signatures[,select], coord_flip = TRUE, mode = "relative"); dev.off()
+
+
+# write out the results so that we can select exactly what we want to plot
+temp <- fit_res$contribution
+temp2 <- cancer_signatures
+write.table(temp, "/data/projects/stacy/gzl_exomes/signature_analysis/output/30_samples_analysis/GZ-optimal_contributions-COSMIC.txt", sep = "\t", quote = FALSE)
+write.table(temp2, "/data/projects/stacy/gzl_exomes/signature_analysis/output/30_samples_analysis/COSMIC-signatures.txt", sep = "\t", quote = FALSE)
+
+# same plot, but with patients sorted by EBV status (or other grouping)
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/30_samples/COSMIC_contributions-per_sample-sorted_by_EBV.pdf", width = 12, height = 7)
 plot_contribution(fit_res$contribution[select,], cancer_signatures[,select], coord_flip = TRUE, mode = "absolute")
 dev.off()
+
+# same plot with patients sorted by EBV status and COSMIC signatures of interest (read in manually)
+#signatures.of.interest <- read.table("/data/projects/stacy/gzl_exomes/signature_analysis/input/signatures_of_interest/signatures_of_interest.txt", sep="\t",header=TRUE)
+signatures.of.interest <- read.table("/data/projects/stacy/gzl_exomes/signature_analysis/input/signatures_of_interest/signatures_of_interest.sorted.txt", sep="\t",header=TRUE)
+select <- signatures.of.interest$signature_index
+names(select) <- signatures.of.interest$signature_name
+# read in optimal contributions that have been sorted by EBV status
+contributions.sorted <- as.matrix(read.table("/data/projects/stacy/gzl_exomes/signature_analysis/input/signatures_of_interest/optimal-contributions-sorted_by_EBER_and_num_mutations.txt", sep="\t",header=TRUE, row.names = 1))
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/30_samples/COSMIC_contributions-per_sample-sorted_by_EBV-signatures_of_interest.pdf", width = 12, height = 7)
+plot_contribution(contributions.sorted[select,], 
+                  cancer_signatures[,select], 
+                  coord_flip = TRUE, 
+                  mode = "absolute", 
+                  palette = c("lightsalmon", "lightsalmon2", "mediumturquoise", "mediumpurple1", "mediumpurple2", "mediumpurple3", "mediumpurple4")); dev.off()
+# and relative contribution plot
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/30_samples/COSMIC_relative_contributions-per_sample-sorted_by_EBV-signatures_of_interest.pdf", width = 12, height = 7)
+plot_contribution(contributions.sorted[select,], 
+                  cancer_signatures[,select], 
+                  coord_flip = TRUE, 
+                  mode = "relative", 
+                  palette = c("lightsalmon", "lightsalmon2", "mediumturquoise", "mediumpurple1", "mediumpurple2", "mediumpurple3", "mediumpurple4")); dev.off()
 
 # plot same plot but without GZ310
 # first remove GZ310 from the mutation matrix
@@ -199,12 +244,12 @@ plot_contribution(fit_res_minus_310$contribution[select,], cancer_signatures[,se
 dev.off()
 
 # plot relative contribution barplot
-pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/COSMIC_optimal_relative_contributions-per_sample.pdf", width = 12, height = 7)
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/30_samples/COSMIC_optimal_relative_contributions-per_sample.pdf", width = 12, height = 7)
 plot_contribution(fit_res$contribution[select,], cancer_signatures[,select], coord_flip = TRUE, mode = "relative")
 dev.off()
 
 # plot relative contribution of cancer signatures in each sample as a heatmap with sample clustering
-pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/heatmap-COSMIC_contributions-per_sample.pdf", width = 10, height = 6)
+pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/30_samples/heatmap-COSMIC_contributions-per_sample.pdf", width = 10, height = 6)
 plot_contribution_heatmap(fit_res$contribution, cluster_samples = TRUE, method = "complete")
 dev.off()
 ```
