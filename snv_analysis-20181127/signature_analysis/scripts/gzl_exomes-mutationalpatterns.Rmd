@@ -425,6 +425,35 @@ pvalue <- chisq.test(sam)$p.value # 0.01326989
 
 ```
 
+## Calculate enrichment of defective DNA mismatch repair signature in EBV+ vs. EBV- groups
+
+```{r}
+library(dplyr)
+
+EBV_pos.DDMR_sig.data <- filter(plot_data, EBER_status == "Positive" & signature_group == "Defective DNA mismatch repair (3, 6, 15, 20, 26)")
+EBV_pos.not_DDMR_sig.data <- filter(plot_data, EBER_status == "Positive" & !(signature_group == "Defective DNA mismatch repair (3, 6, 15, 20, 26)"))
+EBV_neg.DDMR_sig.data <- filter(plot_data, EBER_status == "Negative" & signature_group == "Defective DNA mismatch repair (3, 6, 15, 20, 26)")
+EBV_neg.not_DDMR_sig.data <- filter(plot_data, EBER_status == "Negative" & !(signature_group == "Defective DNA mismatch repair (3, 6, 15, 20, 26)"))
+
+EBV_pos.DDMR_sig.num <- sum(EBV_pos.DDMR_sig.data$contribution) # 191.3075
+EBV_pos.not_DDMR_sig.num <- sum(EBV_pos.not_DDMR_sig.data$contribution) # 458.9504
+EBV_neg.DDMR_sig.num <- sum(EBV_neg.DDMR_sig.data$contribution) # 1458.566
+EBV_neg.not_DDMR_sig.num <- sum(EBV_neg.not_DDMR_sig.data$contribution) # 3966.872
+
+EBV_pos.total <- EBV_pos.DDMR_sig.num + EBV_pos.not_DDMR_sig.num
+EBV_neg.total <- EBV_neg.DDMR_sig.num + EBV_neg.not_DDMR_sig.num
+
+# chi-square test
+sam <- array(dim = c(2,2))
+sam[1, ] <- c(EBV_pos.DDMR_sig.num, EBV_neg.DDMR_sig.num)
+sam[2, ] <- c(EBV_pos.total, EBV_neg.total)
+  
+# Chi-Square test to assess if DDMR in EBV+ cases is more different than expected
+pvalue <- chisq.test(sam)$p.value # 0.3233782
+
+
+```
+
 ## Boxplot of normalized contributions of AID/APOBEC mutations in EBV+ vs. EBV- patients 
 
 ```{r}
