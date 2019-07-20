@@ -30,8 +30,8 @@ library(plyr)
 ## Get list of genes to use for oncoplot
 
 ```{r}
-# get full list of mutations that will be potentially used for oncoplot (excludes GZ222 and GZ2229 only)
-mutations.df <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.maf", sep = "\t", header = TRUE)
+# get full list of mutations that will be potentially used for oncoplot (excludes GZ2229 only)
+mutations.df <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes_incl_GZ222-snvs_indels.maf", sep = "\t", header = TRUE)
 
 # load target panel genes
 genes.target <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/WES_data/target_genes.FINAL_217.txt", header = FALSE)
@@ -86,29 +86,31 @@ num_mutated.med_nonprimary.cutoff <- subset(num_mutated.by_gene.non_primary, num
 med_status_genes.10_plus <- unique(c(as.vector(num_mutated.med_primary.cutoff$gene),
                                                as.vector(num_mutated.med_nonprimary.cutoff$gene)))
 
-write.table(med_status_genes.10_plus, "/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/med_status_genes.10_plus.txt", quote = FALSE, row.names = FALSE)
+write.table(med_status_genes.10_plus, "/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/med_status_genes.10_plus-v_incl_GZ222.txt", quote = FALSE, row.names = FALSE)
 
 # create mutation matrix for filtered gene list
-mutations.df <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.mutated_target_panel.maf", sep = "\t", header = TRUE, fill = TRUE)
+#mutations.df <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.mutated_target_panel.maf", sep = "\t", header = TRUE, fill = TRUE)
 mutations.df <- filter(mutations.df, mutations.df$Hugo_Symbol %in% med_status_genes.10_plus)
-write.table(mutations.df, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.filtered_med_status_group.maf", sep = "\t", quote = FALSE, row.names = FALSE)
+write.table(mutations.df, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes_incl_GZ222-snvs_indels.filtered_med_status_group.maf", sep = "\t", quote = FALSE, row.names = FALSE)
 
 mutations.df$Hugo_Symbol <- factor(mutations.df$Hugo_Symbol)
 mutations.df <- unique(mutations.df[c("Hugo_Symbol", "Tumor_Sample_Barcode")])
 mutation.matrix <- table(mutations.df$Tumor_Sample_Barcode, mutations.df$Hugo_Symbol)
-write.table(mutation.matrix, "/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/mutation_matrix-mediastinal_groups_10+_freq_mutated.txt", sep = "\t", quote = FALSE)
+write.table(mutation.matrix, "/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/mutation_matrix-incl_GZ222-mediastinal_groups_10+_freq_mutated.txt", sep = "\t", quote = FALSE)
 ```
 
 ## Sort matrix
 
 ```{r}
 # for each gene, calculate number of mutated cases; and number of pathology group-specific cases
-mut.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/mutation_matrix-mediastinal_groups_10+_freq_mutated.with_group_and_sums.txt", sep = "\t", header = TRUE)
+#mut.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/mutation_matrix-mediastinal_groups_10+_freq_mutated.with_group_and_sums.txt", sep = "\t", header = TRUE)
+mut.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/mutation_matrix_incl_GZ222-mediastinal_groups_10+_freq_mutated.with_group_and_sums.txt", sep = "\t", header = TRUE)
 
 # sort by each gene in their current order
-#mut.data.sorted <- mut.data[with(mut.data, order(Path_group, -SOCS1, -B2M, -GNA13, -LRRN3, -CSMD3, -CSF2RB, -ITPKB, -NCOR1, -ZNF217, -IRF2BP2, -ARID1A, -EGR1, -IRF4, - LMF2, -PRKDC, -RELN, - SPEN, -ABCA13, -ABCC6, -C2CD3, -CD58, - CISH, - KCNQ3, -MFHAS1, -MLL2, -NFKBIE, -RC3H2, -SIAH2 , -STAT6, -TNFAIP3, -WEE1, -DHX58, -GRIA4, -ABCD2, -ADAP1, -AMOT, - BCL2, - BRWD3, -GRIN3A, -HIST1H1B, -MAPK6, -MCL1, -MSH6, -SETD1B, -SHISA6, -SPSB4, -USP5, -XCR1, -DIAPH3, -ARID5B, -FLT4, -NLRP4, -TAB1, -HIST1H1E, -NFKBIB, -POU2AF1, -ATM, -SPOP)), ]
 
-mut.data.sorted <- mut.data[with(mut.data, order(mediastinal_involvement, -SOCS1, -B2M, -GNA13, -LRRN3, -CSMD3, -IRF2BP2, -CSF2RB, -ITPKB, -NCOR1, -ZNF217, -KCNQ3, -RELN, -ABCC6, -ARID1A, -C2CD3, -CD58, -EGR1, -IRF4, -LMF2, -PRKDC, -RC3H2, -SPEN, -STAT6, -WEE1, -ABCA13, -CISH, -MFHAS1, -MLL2, -NFKBIE, -SIAH2, -TNFAIP3, -ABCD2, -BRWD3, -DDX60, -DIAPH3, -GRIA4, -MAPK6, -MLL, -USP5, -XCR1, -ARHGAP29, -BTG1, -CD83, -CIITA, -DSC2, -DUSP2, -HDAC4, -HEXIM1, -HIST1H4C, -HIST1H4H, -IKBKB, -LTB, -NBPF6, -NF1, -NFATC3, -NFKBIA, -NONO, -NSD1, -PCBP1, -PIK3C2G, -POU4F3, -PRDM16, -RNF217, -SRSF2, -TBC1D4, -TNIP1, -WDFY3, -ZFP36L1, -ZNF423)), ]
+#mut.data.sorted <- mut.data[with(mut.data, order(mediastinal_involvement, -SOCS1, -B2M, -GNA13, -LRRN3, -CSMD3, -IRF2BP2, -CSF2RB, -ITPKB, -NCOR1, -ZNF217, -KCNQ3, -RELN, -ABCC6, -ARID1A, -C2CD3, -CD58, -EGR1, -IRF4, -LMF2, -PRKDC, -RC3H2, -SPEN, -STAT6, -WEE1, -ABCA13, -CISH, -MFHAS1, -MLL2, -NFKBIE, -SIAH2, -TNFAIP3, -ABCD2, -BRWD3, -DDX60, -DIAPH3, -GRIA4, -MAPK6, -MLL, -USP5, -XCR1, -ARHGAP29, -BTG1, -CD83, -CIITA, -DSC2, -DUSP2, -HDAC4, -HEXIM1, -HIST1H4C, -HIST1H4H, -IKBKB, -LTB, -NBPF6, -NF1, -NFATC3, -NFKBIA, -NONO, -NSD1, -PCBP1, -PIK3C2G, -POU4F3, -PRDM16, -RNF217, -SRSF2, -TBC1D4, -TNIP1, -WDFY3, -ZFP36L1, -ZNF423)), ]
+
+mut.data.sorted <- mut.data[with(mut.data, order(mediastinal_involvement, -SOCS1, -B2M, -GNA13, -LRRN3, -CSMD3, -IRF2BP2, -CSF2RB, -ITPKB, -NCOR1, -NFKBIE, -ZNF217, -KCNQ3, -MLL, -RELN, -ABCC6, -ARID1A, -C2CD3, -CD58, -EGR1, -IRF4, -LMF2, -PRKDC, -RC3H2, -SPEN, -STAT6, -WEE1, -ABCA13, -CISH, -MFHAS1, -MLL2, -SIAH2, -TNFAIP3, -ZFP36L1, -ABCD2, -BRWD3, -DDX60, -DIAPH3, -GRIA4, -MAPK6, -USP5, -XCR1, -ARHGAP29, -BTG1, -CD83, -CIITA, -DDX3X, -DSC2, -DUSP2, -HDAC4, -HEXIM1, -HIST1H4C, -HIST1H4H, -IKBKB, -LTB, -NBPF6, -NF1, -NFATC3, -NFKBIA, -NONO, -NSD1, -PCBP1, -PIK3C2G, -POU4F3, -PRDM16, -RNF217, -SRSF2, -TBC1D4, -TNIP1, -WDFY3, -ZNF423)), ]
 
 patients.ordered <- as.vector(mut.data.sorted$patient)
 write.table(patients.ordered, "/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/patients.ordered.CURRENT.txt", sep = "\t", quote = FALSE)
@@ -119,21 +121,24 @@ genes.ordered <- genes.ordered[ genes.ordered != "patient"]
 genes.ordered <- genes.ordered[ genes.ordered != "mediastinal_involvement"]
 write.table(genes.ordered, "/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/genes.ordered.CURRENT.txt", sep = "\t", quote = FALSE)
 
-write.table(mut.oncoplot, "/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/mutation_matrix-mediastinal_groups_10+_freq_mutated.oncoplot.txt", sep = "\t", quote = FALSE)
+write.table(mut.oncoplot, "/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/mutation_matrix_incl_GZ222-mediastinal_groups_10+_freq_mutated.oncoplot.txt", sep = "\t", quote = FALSE)
 
 ```
 
-## Path group-specific oncoplots
+## Mediastinal involvement-specific oncoplots
 
 ```{r}
 library(maftools)
 
-clinical.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/GZ_WES_cases-clinical_data.with_updated_mediastinal_and_age.txt", sep = "\t", header = TRUE)
-#clinical.data$Path_group <- revalue(clinical.data$Path_group, c("0 = cHL"="0_=_cHL", "1 = cHL-interm"="1_=_cHL-interm", "2 = LBCL-interm"="2_=_LBCL-interm", "3 = LBCL"="3_=_LBCL"))
+clinical.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/GZ_WES_cases-clinical_data.with_updated_mediastinal_and_age_and_9p24.txt", sep = "\t", header = TRUE)
 
-mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.filtered_med_status_group.maf", clinicalData = clinical.data)
+#mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.filtered_med_status_group.maf", clinicalData = clinical.data)
+#mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/gzl_exomes-snvs_indels.filtered_med_status_group.with_REMOVE_gene.maf", clinicalData = clinical.data)
 
-genes.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization//genes.ordered.CURRENT.txt")
+# altered version with a "REMOVE" gene so that patients with no mutations are still represented
+mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes_incl_GZ222-snvs_indels.filtered_med_status_group.with_REMOVE_gene.maf", clinicalData = clinical.data)
+
+genes.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/genes.ordered.CURRENT.txt")
 genes.ordered <- as.vector(genes.ordered$x)
 patients.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/patients.ordered.CURRENT.txt")
 patients.ordered <- as.vector(patients.ordered$x)
@@ -149,19 +154,28 @@ annot.colors <- list(Gender = c("Female" = "palevioletred1", "Male" = "royalblue
                                    "3_=_LBCL" = "steelblue1")
                )
 
+#                     GISTIC_9p24 = c("no_change" = "grey", 
+#                                     "low-level_amp" = "#E6C8C8", 
+#                                     "high-level_amp" = "firebrick3"),
+#                     FISH_9p24 = c("NORMAL" = "grey" , "GAIN" = "indianred1", "AMP" = "firebrick3"),
+
+
 # show patients ordered by group, and mutations ordered by frequency
 # include "REMOVE" gene since the removeNonMutated parameter doesn't work (i.e. doesn't show non-mutated case when FALSE)
-#genes.ordered <- c(genes.ordered, "REMOVE")
+genes.ordered <- c(genes.ordered, "REMOVE")
 
-oncoplot(maf = mutations.maf, SampleNamefontSize = 0.8,
+oncoplot(maf = mutations.maf, SampleNamefontSize = 0.8, 
          removeNonMutated = FALSE,
          sampleOrder = patients.ordered,
          genes = genes.ordered, 
          keepGeneOrder = TRUE, fontSize = 0.6, titleFontSize = 0, legendFontSize = 1, annotationFontSize = 1,
-         clinicalFeatures = c("Path_group", "EBER", "Mediastinal_involvement", "Gender", "Age_category"),
+         clinicalFeatures = c("Mediastinal_involvement", "EBER", "Gender", 
+                              "Path_group", "Age_category"),
          annotationColor = annot.colors, 
          showTumorSampleBarcodes = TRUE,
          drawColBar = FALSE)
+
+#                              "GISTIC_9p24", "FISH_9p24",  
 
 # version with large patient font
 oncoplot(maf = mutations.maf, SampleNamefontSize = 0.75,
