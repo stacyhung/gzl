@@ -85,34 +85,41 @@ mutated.EBER_neg <- unique(filter(mutated_cases.by_eber_and_gene, mutated_cases.
 # get NUMBER OF CASES mutated per GROUP (to calculate normalized proportions)
 NUM_EBER_POS <- length(unique(mutated.EBER_pos$Tumor_Sample_Barcode))
 NUM_EBER_NEG <- length(unique(mutated.EBER_neg$Tumor_Sample_Barcode))
+NUM_ALL_CASES <- length(unique(mutated_cases.by_eber_and_gene$Tumor_Sample_Barcode))
 
 # extract GENES mutated in each GROUP 
 num_mutated.by_EBER_pos <- subset(mutated.table, mutated.table$EBER_status == "Positive" & mutated.table$num_mutated > 0)
 num_mutated.by_EBER_neg <- subset(mutated.table, mutated.table$EBER_status == "Negative" & mutated.table$num_mutated > 0)
+num_mutated.all_cases <- subset(mutated.table, mutated.table$num_mutated > 0)
 
 # calculate proportion of mutated cases
 num_mutated.by_EBER_pos$proportion <- num_mutated.by_EBER_pos$num_mutated / NUM_EBER_POS*100
 num_mutated.by_EBER_neg$proportion <- num_mutated.by_EBER_neg$num_mutated / NUM_EBER_NEG*100
+num_mutated.all_cases$proportion <- num_mutated.all_cases$num_mutated / NUM_ALL_CASES*100
 
 PERCENT_MUTATED = 10
+MIN_CASES_MUTATED = 2
 
-# identify genes that fall are present in 10%+ each EBER group
-num_mutated.EBER_pos.cutoff <- subset(num_mutated.by_EBER_pos, num_mutated.by_EBER_pos$proportion >= PERCENT_MUTATED)
-num_mutated.EBER_neg.cutoff <- subset(num_mutated.by_EBER_neg, num_mutated.by_EBER_neg$proportion >= PERCENT_MUTATED)
+# CRITERIA FOR GENE SELECTION:
 
-eber_genes.10_plus <- unique(c(as.vector(num_mutated.EBER_pos.cutoff$gene), as.vector(num_mutated.EBER_neg.cutoff$gene)))
+# CURRENT CRITERIA: genes that are mutated in 2+ cases in EBV+ cases *OR* mutated in >= 10% of ALL cases
+# Previous criteria: genes are mutated in >= 10% for each group
+num_mutated.EBER_pos.cutoff <- subset(num_mutated.by_EBER_pos, num_mutated.by_EBER_pos$num_mutated >= MIN_CASES_MUTATED)
+num_mutated.all_cases.cutoff <- subset(num_mutated.all_cases, num_mutated.all_cases$proportion >= PERCENT_MUTATED)
 
-write.table(eber_genes.10_plus, "/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/eber_genes.10_plus-v_incl_GZ222.txt", quote = FALSE, row.names = FALSE)
+#eber_genes.10_plus <- unique(c(as.vector(num_mutated.EBER_pos.cutoff$gene), as.vector(num_mutated.EBER_neg.cutoff$gene)))
+eber_genes.10_plus <- unique(c(as.vector(num_mutated.EBER_pos.cutoff$gene), as.vector(num_mutated.all_cases.cutoff$gene)))
+
+write.table(eber_genes.10_plus, "/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/eber_genes.10_plus_all_cases.2+_cases_EBV_pos-v_incl_GZ222.txt", quote = FALSE, row.names = FALSE)
 
 # create mutation matrix for filtered gene list
-#mutations.df <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.mutated_target_panel.maf", sep = "\t", header = TRUE, fill = TRUE)
 mutations.df <- filter(mutations.df, mutations.df$Hugo_Symbol %in% eber_genes.10_plus)
-write.table(mutations.df, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes_incl_GZ222-snvs_indels.filtered_eber_status.maf", sep = "\t", quote = FALSE, row.names = FALSE)
+write.table(mutations.df, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes_incl_GZ222-snvs_indels.filtered_eber_status_v2.maf", sep = "\t", quote = FALSE, row.names = FALSE)
 
 mutations.df$Hugo_Symbol <- factor(mutations.df$Hugo_Symbol)
 mutations.df <- unique(mutations.df[c("Hugo_Symbol", "Tumor_Sample_Barcode")])
 mutation.matrix <- table(mutations.df$Tumor_Sample_Barcode, mutations.df$Hugo_Symbol)
-write.table(mutation.matrix, "/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/mutation_matrix-incl_GZ222-eber_groups_10+_freq_mutated.txt", sep = "\t", quote = FALSE)
+write.table(mutation.matrix, "/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/mutation_matrix-incl_GZ222-eber_groups_10+_freq_mutated.2+_cases_EBER_pos.txt", sep = "\t", quote = FALSE)
 
 ```
 
@@ -127,10 +134,13 @@ write.table(mutation.matrix, "/Volumes/shung/projects/gzl_exomes/data/EBV_visual
 # --> this ensures that genes unique mutated in EBER+ show up at the bottom of the plot
 
 # for each gene, calculate number of mutated cases; and number of pathology group-specific cases
-mut.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/mutation_matrix-incl_GZ222-eber_groups_10+_freq_mutated.sorted_by_grp_sums.txt", sep = "\t", header = TRUE)
+#mut.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/mutation_matrix-incl_GZ222-eber_groups_10+_freq_mutated.sorted_by_grp_sums.txt", sep = "\t", header = TRUE)
+mut.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/mutation_matrix-incl_GZ222-eber_groups_10+_freq_mutated.2+_cases_EBER_pos.sorted_by_group_sums.txt", sep = "\t", header = TRUE)
 
 # sort by each gene in their current order
-mut.data.sorted <- mut.data[with(mut.data, order(EBER_status, -SOCS1, -B2M, -LRRN3, -GNA13, -ITPKB, -NCOR1, -NFKBIE, -CSF2RB, -CSMD3, -IRF2BP2, -ZNF217, -ABCA13, -ABCC6, -ARID1A, -EGR1, -KCNQ3, -MFHAS1, -MLL2, -RC3H2, -SIAH2, -SPEN, -STAT6, -TNFAIP3, -WEE1, -ZFP36L1, -C2CD3, -CISH, -IRF4, -LMF2, -MLL, -PRKDC, -RELN, -CD58, -AMOT, -ASCC3, -BARX2, -DDX60, -EHMT2, -GPR137C, -GRIN3A, -HIST1H4C, -MAPK6, -MCL1, -NLRP4, -NOTCH2, -POM121L12, -RIBC2, -SEMA3E, -XCR1, -ACTB, -ATP13A4, -DHX58, -STAT3, -HIST1H1D, -NOTCH1, -RGS1, -SGK1, -TAF1)), ]
+#mut.data.sorted <- mut.data[with(mut.data, order(EBER_status, -SOCS1, -B2M, -LRRN3, -GNA13, -ITPKB, -NCOR1, -NFKBIE, -CSF2RB, -CSMD3, -IRF2BP2, -ZNF217, -ABCA13, -ABCC6, -ARID1A, -EGR1, -KCNQ3, -MFHAS1, -MLL2, -RC3H2, -SIAH2, -SPEN, -STAT6, -TNFAIP3, -WEE1, -ZFP36L1, -C2CD3, -CISH, -IRF4, -LMF2, -MLL, -PRKDC, -RELN, -CD58, -AMOT, -ASCC3, -BARX2, -DDX60, -EHMT2, -GPR137C, -GRIN3A, -HIST1H4C, -MAPK6, -MCL1, -NLRP4, -NOTCH2, -POM121L12, -RIBC2, -SEMA3E, -XCR1, -ACTB, -ATP13A4, -DHX58, -STAT3, -HIST1H1D, -NOTCH1, -RGS1, -SGK1, -TAF1)), ]
+
+mut.data.sorted <- mut.data[with(mut.data, order(EBER_status, -SOCS1, -B2M, -LRRN3, -GNA13, -ITPKB, -NCOR1, -NFKBIE, -CSF2RB, -CSMD3, -IRF2BP2, -ZNF217, -ABCA13, -ABCC6, -ARID1A, -EGR1, -KCNQ3, -MFHAS1, -MLL2, -RC3H2, -SIAH2, -SPEN, -STAT6, -TNFAIP3, -WEE1, -ZFP36L1, -CD58, -ACTB, -ATP13A4, -DHX58, -STAT3)), ]
 
 patients.ordered <- as.vector(mut.data.sorted$patient)
 write.table(patients.ordered, "/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/patients.ordered.CURRENT.txt", sep = "\t", quote = FALSE)
@@ -141,7 +151,7 @@ genes.ordered <- genes.ordered[ genes.ordered != "patient"]
 genes.ordered <- genes.ordered[ genes.ordered != "EBER_status"]
 write.table(genes.ordered, "/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/genes.ordered.CURRENT.txt", sep = "\t", quote = FALSE)
 
-write.table(mut.oncoplot, "/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/mutation_matrix-incl_GZ222-eber_groups_10+_freq_mutated.oncoplot.txt", sep = "\t", quote = FALSE)
+write.table(mut.oncoplot, "/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/mutation_matrix-incl_GZ222-eber_groups_10+_freq_mutated.2+_cases_EBER_pos.oncoplot.txt", sep = "\t", quote = FALSE)
 ```
 
 ## EBV-specific oncoplots
@@ -154,7 +164,8 @@ library(maftools)
 
 clinical.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/GZ_WES_cases-clinical_data.with_updated_mediastinal_and_age.txt", sep = "\t", header = TRUE)
 
-mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes_incl_GZ222-snvs_indels.filtered_eber_status.maf", clinicalData = clinical.data)
+#mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes_incl_GZ222-snvs_indels.filtered_eber_status.maf", clinicalData = clinical.data)
+mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes_incl_GZ222-snvs_indels.filtered_eber_status_v2.maf", clinicalData = clinical.data)
 
 # colours for annotation tracks
 annot.colors <- list(Gender = c("Female" = "palevioletred1", "Male" = "royalblue1"),
@@ -169,11 +180,8 @@ annot.colors <- list(Gender = c("Female" = "palevioletred1", "Male" = "royalblue
 
 # plot by EBV+ and EBV- sorted cohorts
 # list of genes that are mutated in at least 10% of EBV+ and EBV- cases, sorted by gene
-#genes.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/genes.ordered.CURRENT.txt")
-#genes.ordered <- as.vector(genes.ordered$gene)
-#patients.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/patients.ordered.CURRENT.txt")
 
-oncoplot(maf = mutations.maf, SampleNamefontSize = 0.65,
+oncoplot(maf = mutations.maf, SampleNamefontSize = 0.7,
          removeNonMutated = FALSE,
          sampleOrder = patients.ordered, 
          genes = genes.ordered, 
