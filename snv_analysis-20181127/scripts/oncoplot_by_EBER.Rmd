@@ -165,7 +165,17 @@ library(maftools)
 clinical.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/GZ_WES_cases-clinical_data.with_updated_mediastinal_and_age.txt", sep = "\t", header = TRUE)
 
 #mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes_incl_GZ222-snvs_indels.filtered_eber_status.maf", clinicalData = clinical.data)
+# add "REMOVE" gene for non-mutated cases (GZ-180, GZ-032)
 mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes_incl_GZ222-snvs_indels.filtered_eber_status_v2.maf", clinicalData = clinical.data)
+
+# order of patients
+patients.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/patients.ordered.CURRENT.txt", sep = "\t", header = TRUE)
+patients.ordered <- as.vector(patients.ordered$x)
+
+# order of genes
+genes.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/EBV_visualization/genes.ordered.CURRENT.txt", sep = "\t", header = TRUE)
+genes.ordered <- as.vector(genes.ordered$x)
+genes.ordered <- c(genes.ordered, "REMOVE")
 
 # colours for annotation tracks
 annot.colors <- list(Gender = c("Female" = "palevioletred1", "Male" = "royalblue1"),
