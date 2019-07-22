@@ -188,3 +188,44 @@ oncoplot(maf = mutations.maf, SampleNamefontSize = 0.75,
 
 ```
 
+## Get total numbers of mutations (used for oncoplot - i.e. excluding UTR and silent) based on mediastinal involvement
+
+```{r}
+# load the list of mutations
+mutations.df <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes_incl_GZ222-snvs_indels.maf", sep = "\t", header = TRUE)
+
+# load metadata
+clinical.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/GZ_WES_cases-clinical_data.with_updated_mediastinal_and_age.txt", sep = "\t", header = TRUE)
+
+# map on formal patient id mappings
+patient_id.to.new_patient_id <- as.vector(clinical.data$Tumor_Sample_Barcode)
+names(patient_id.to.new_patient_id) <- as.vector(clinical.data$tumor_id2)
+mutations.df$Tumor_Sample_Barcode <- revalue(mutations.df$Tumor_Sample_Barcode, patient_id.to.new_patient_id)
+
+# map on mediastrinal involvement (Not involved, secondary, primary)
+patient.to.med_status <- as.vector(clinical.data$Mediastinal_involvement)
+names(patient.to.med_status) <- as.vector(clinical.data$Tumor_Sample_Barcode)
+mutations.df$med_status <- revalue(mutations.df$Tumor_Sample_Barcode, patient.to.med_status)
+
+num_mutations.by_med_involvement <- table(mutations.df$Tumor_Sample_Barcode, mutations.df$med_status)
+
+num_mutations.by_med_involvement.sorted <- num_mutations.by_med_involvement[
+  order(-num_mutations.by_med_involvement[, 1],
+        -num_mutations.by_med_involvement[, 2],
+        -num_mutations.by_med_involvement[, 3]),
+]
+```
+
+## Create vertical track for recurrent genes related to mediastinal groups showing mutational frequencies in PMBCL, HL (Tiacci)
+
+```{r}
+
+# read in list of genes in order of oncoplot
+genes.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/genes.ordered.CURRENT.txt")
+genes.ordered <- as.vector(genes.ordered$x)
+
+
+
+
+```
+
