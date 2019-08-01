@@ -73,16 +73,20 @@ NUM_NONPRIMARY <- length(unique(mutated.non_primary$Tumor_Sample_Barcode))
 # extract GENES mutated in each GROUP 
 num_mutated.by_gene.primary <- subset(mutated.table, mutated.table$Med_status == "Primary" & mutated.table$num_mutated > 0)
 num_mutated.by_gene.non_primary <- subset(mutated.table, mutated.table$Med_status != "Primary" & mutated.table$num_mutated > 0)
+# need to combine counts for "Not involved" and "Secondary" since they are still distinct
+num_mutated.by_gene.non_primary$gene <- factor(num_mutated.by_gene.non_primary$gene)
+num_mutated.by_gene.non_primary.combined <- as.data.frame(table(num_mutated.by_gene.non_primary$gene))
+colnames(num_mutated.by_gene.non_primary.combined) <- c("gene", "num_mutated")
 
 # calculate proportion of mutated cases
 num_mutated.by_gene.primary$proportion <- num_mutated.by_gene.primary$num_mutated / NUM_PRIMARY * 100
-num_mutated.by_gene.non_primary$proportion <- num_mutated.by_gene.non_primary$num_mutated / NUM_NONPRIMARY * 100
+num_mutated.by_gene.non_primary.combined$proportion <- num_mutated.by_gene.non_primary.combined$num_mutated / NUM_NONPRIMARY * 100
 
 PERCENT_MUTATED = 10
 
 # identify genes are present in 10%+ of primary mediastinal group, genes present in 10%+ of non-primary mediastinal group
 num_mutated.med_primary.cutoff <- subset(num_mutated.by_gene.primary, num_mutated.by_gene.primary$proportion >= PERCENT_MUTATED)
-num_mutated.med_nonprimary.cutoff <- subset(num_mutated.by_gene.non_primary, num_mutated.by_gene.non_primary$proportion >= PERCENT_MUTATED)
+num_mutated.med_nonprimary.cutoff <- subset(num_mutated.by_gene.non_primary.combined, num_mutated.by_gene.non_primary.combined$proportion >= PERCENT_MUTATED)
 med_status_genes.10_plus <- unique(c(as.vector(num_mutated.med_primary.cutoff$gene),
                                                as.vector(num_mutated.med_nonprimary.cutoff$gene)))
 
@@ -110,14 +114,14 @@ mut.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/mediastinal_grou
 
 #mut.data.sorted <- mut.data[with(mut.data, order(mediastinal_involvement, -SOCS1, -B2M, -GNA13, -LRRN3, -CSMD3, -IRF2BP2, -CSF2RB, -ITPKB, -NCOR1, -ZNF217, -KCNQ3, -RELN, -ABCC6, -ARID1A, -C2CD3, -CD58, -EGR1, -IRF4, -LMF2, -PRKDC, -RC3H2, -SPEN, -STAT6, -WEE1, -ABCA13, -CISH, -MFHAS1, -MLL2, -NFKBIE, -SIAH2, -TNFAIP3, -ABCD2, -BRWD3, -DDX60, -DIAPH3, -GRIA4, -MAPK6, -MLL, -USP5, -XCR1, -ARHGAP29, -BTG1, -CD83, -CIITA, -DSC2, -DUSP2, -HDAC4, -HEXIM1, -HIST1H4C, -HIST1H4H, -IKBKB, -LTB, -NBPF6, -NF1, -NFATC3, -NFKBIA, -NONO, -NSD1, -PCBP1, -PIK3C2G, -POU4F3, -PRDM16, -RNF217, -SRSF2, -TBC1D4, -TNIP1, -WDFY3, -ZFP36L1, -ZNF423)), ]
 
-mut.data.sorted <- mut.data[with(mut.data, order(mediastinal_involvement, -SOCS1, -B2M, -GNA13, -LRRN3, -CSMD3, -IRF2BP2, -CSF2RB, -ITPKB, -NCOR1, -NFKBIE, -ZNF217, -KCNQ3, -MLL, -RELN, -ABCC6, -ARID1A, -C2CD3, -CD58, -EGR1, -IRF4, -LMF2, -PRKDC, -RC3H2, -SPEN, -STAT6, -WEE1, -ABCA13, -CISH, -MFHAS1, -MLL2, -SIAH2, -TNFAIP3, -ZFP36L1, -ABCD2, -BRWD3, -DDX60, -DIAPH3, -GRIA4, -MAPK6, -USP5, -XCR1, -ARHGAP29, -BTG1, -CD83, -CIITA, -DDX3X, -DSC2, -DUSP2, -HDAC4, -HEXIM1, -HIST1H4C, -HIST1H4H, -IKBKB, -LTB, -NBPF6, -NF1, -NFATC3, -NFKBIA, -NONO, -NSD1, -PCBP1, -PIK3C2G, -POU4F3, -PRDM16, -RNF217, -SRSF2, -TBC1D4, -TNIP1, -WDFY3, -ZNF423)), ]
+mut.data.sorted <- mut.data[with(mut.data, order(mediastinal_involvement, -SOCS1, -B2M, -GNA13, -LRRN3, -CSMD3, -IRF2BP2, -CSF2RB, -ITPKB, -NCOR1, -NFKBIE, -ZNF217, -ABCC6, -ARID1A, -C2CD3, -CD58, -EGR1, -IRF4, -LMF2, -PRKDC, -RC3H2, -SPEN, -STAT6, -WEE1, -ABCA13, -CISH, -MFHAS1, -MLL2, -SIAH2, -TNFAIP3, -ZFP36L1, -AMOT, -ATP13A4, -DHX58, -FLT4, -NLRP4, -NOTCH2, -STAT3, -TP53BP1, -ARHGAP29, -BTG1, -CD83, -CIITA, -DDX3X, -DSC2, -DUSP2, -HDAC4, -HEXIM1, -HIST1H4C, -HIST1H4H, -IKBKB, -LTB, -NBPF6, -NF1, -NFATC3, -NFKBIA, -NONO, -NSD1, -PCBP1, -PIK3C2G, -POU4F3, -PRDM16, -RNF217, -SRSF2, -TBC1D4, -TNIP1, -WDFY3, -ZNF423)), ]
 
 patients.ordered <- as.vector(mut.data.sorted$patient)
 write.table(patients.ordered, "/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/patients.ordered.CURRENT.txt", sep = "\t", quote = FALSE)
 
 mut.oncoplot <- t(mut.data.sorted)
 genes.ordered <- as.vector(row.names(mut.oncoplot))
-genes.ordered <- genes.ordered[ genes.ordered != "patient"]
+genes.ordered <- genes.ordered[ genes.ordered != "patient_id"]
 genes.ordered <- genes.ordered[ genes.ordered != "mediastinal_involvement"]
 write.table(genes.ordered, "/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/genes.ordered.CURRENT.txt", sep = "\t", quote = FALSE)
 
@@ -130,13 +134,14 @@ write.table(mut.oncoplot, "/Volumes/shung/projects/gzl_exomes/data/mediastinal_g
 ```{r}
 library(maftools)
 
-clinical.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/GZ_WES_cases-clinical_data.with_updated_mediastinal_and_age_and_9p24.txt", sep = "\t", header = TRUE)
+clinical.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/GZ_WES_cases-clinical_data.with_updated_mediastinal_and_age_and_9p24_and_CIITA.txt", sep = "\t", header = TRUE)
 
 #mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes-snvs_indels.filtered_med_status_group.maf", clinicalData = clinical.data)
 #mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/gzl_exomes-snvs_indels.filtered_med_status_group.with_REMOVE_gene.maf", clinicalData = clinical.data)
 
 # altered version with a "REMOVE" gene so that patients with no mutations are still represented
-mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes_incl_GZ222-snvs_indels.filtered_med_status_group.with_REMOVE_gene.maf", clinicalData = clinical.data)
+#mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes_incl_GZ222-snvs_indels.filtered_med_status_group.with_REMOVE_gene.maf", clinicalData = clinical.data)
+mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes_incl_GZ222-snvs_indels.filtered_med_status_group.maf", clinicalData = clinical.data)
 
 genes.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/genes.ordered.CURRENT.txt")
 genes.ordered <- as.vector(genes.ordered$x)
@@ -148,21 +153,22 @@ annot.colors <- list(Gender = c("Female" = "palevioletred1", "Male" = "royalblue
                      EBER = c("Negative" = "black", "Positive" = "red"),
                      Mediastinal = c("Not_involved" = "grey", "Secondary" = "plum2", "Primary" = "purple"),
                      Age_yrs = c("<_45" = "bisque", "45_<_age_<_60"="navajowhite3", ">=_60" = "bisque4"),
+                     GISTIC_9p24 = c("no_change" = "grey", 
+                                     "low-level_amp" = "#E6C8C8", 
+                                     "high-level_amp" = "firebrick3"),
+                     FISH_9p24 = c("NORMAL" = "grey" , "GAIN" = "indianred1", "AMP" = "firebrick3", "FAIL"="black"),
+                     FISH_CIITA = c("NORMAL" = "grey", "GAIN" = "indianred1", "AMP" = "firebrick3", "FAIL"="black"),
                      Path_group = c("0_=_cHL" = "lightsalmon",
                                    "1_=_cHL-interm" = "khaki1",
                                    "2_=_LBCL-interm" = "lightgreen", 
                                    "3_=_LBCL" = "steelblue1")
                )
 
-#                     GISTIC_9p24 = c("no_change" = "grey", 
-#                                     "low-level_amp" = "#E6C8C8", 
-#                                     "high-level_amp" = "firebrick3"),
-#                     FISH_9p24 = c("NORMAL" = "grey" , "GAIN" = "indianred1", "AMP" = "firebrick3"),
 
 
 # show patients ordered by group, and mutations ordered by frequency
 # include "REMOVE" gene since the removeNonMutated parameter doesn't work (i.e. doesn't show non-mutated case when FALSE)
-genes.ordered <- c(genes.ordered, "REMOVE")
+#genes.ordered <- c(genes.ordered, "REMOVE")
 
 oncoplot(maf = mutations.maf, SampleNamefontSize = 0.8, 
          removeNonMutated = FALSE,
@@ -170,12 +176,12 @@ oncoplot(maf = mutations.maf, SampleNamefontSize = 0.8,
          genes = genes.ordered, 
          keepGeneOrder = TRUE, fontSize = 0.6, titleFontSize = 0, legendFontSize = 1, annotationFontSize = 1,
          clinicalFeatures = c("Mediastinal_involvement", "EBER", "Gender", 
+                              "GISTIC_9p24", "FISH_9p24",  "FISH_CIITA",
                               "Path_group", "Age_category"),
          annotationColor = annot.colors, 
          showTumorSampleBarcodes = TRUE,
          drawColBar = FALSE)
 
-#                              "GISTIC_9p24", "FISH_9p24",  
 
 # version with large patient font
 oncoplot(maf = mutations.maf, SampleNamefontSize = 0.75,
@@ -188,7 +194,7 @@ oncoplot(maf = mutations.maf, SampleNamefontSize = 0.75,
 
 ```
 
-## Get total numbers of mutations (used for oncoplot - i.e. excluding UTR and silent) based on mediastinal involvement
+## Some basic stats - total numbers of mutations (used for oncoplot - i.e. excluding UTR and silent) based on mediastinal involvement
 
 ```{r}
 # load the list of mutations
@@ -224,7 +230,71 @@ num_mutations.by_med_involvement.sorted <- num_mutations.by_med_involvement[
 genes.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/genes.ordered.CURRENT.txt")
 genes.ordered <- as.vector(genes.ordered$x)
 
+# create frequency data for GZL
 
+mutations.df <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes_incl_GZ222-snvs_indels.maf", sep = "\t", header = TRUE)
+mutations.df <- filter(mutations.df, mutations.df$Hugo_Symbol %in% genes.ordered)
+mutations.df$Hugo_Symbol <- factor(mutations.df$Hugo_Symbol)
+
+# generate table to show mutated cases
+gzl.patient.gene <- unique(mutations.df[c("Tumor_Sample_Barcode", "Hugo_Symbol")])
+colnames(gzl.patient.gene) <- c("tumor_id", "gene")
+gzl.patient.gene$gene <- factor(gzl.patient.gene$gene)
+gzl.table.mutated <- as.data.frame(table(gzl.patient.gene$gene))
+gzl.table.mutated$proportion <- gzl.table.mutated$Freq / 30 * 100
+colnames(gzl.table.mutated) <- c("gene", "num_mutated", "proportion")
+
+write.table(gzl.table.mutated, "/Volumes/shung/projects/gzl_exomes/frequency_analysis/gzl_exomes-gene_freq.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+# create frequency plots for HL and PMBCL using same genes (and ordered) as in oncoplot
+
+freq.data <- read.table("/Volumes/shung/projects/gzl_exomes/frequency_analysis/freq_data-HL_and_PMBCL_and_GZL.txt", sep = "\t", header = TRUE)
+
+# maintain order of genes
+freq.data$gene <- factor(freq.data$gene, levels = rev(unique(freq.data$gene)))
+
+# create axis so that all genes line up
+freq.data$pos <- "A"
+
+# dot plot
+#p <- ggplot(freq.data, aes(x=freq, y=gene, group=path)) + geom_point(aes(fill=path, size=freq))
+
+# bar plot
+#p <- ggplot(freq.data, aes(x=gene, y=freq)) + geom_bar(stat = "identity") + coord_flip()
+
+# lollipop plot
+p <- ggplot(freq.data, aes(x=gene, y=pos)) + 
+  geom_point(aes(size = freq, color = freq)) + 
+  coord_flip() + 
+    theme(
+      panel.grid.minor.y = element_blank(),
+      panel.grid.major.y = element_blank(),
+      legend.position="none"
+    ) +
+  xlab("") + ylab("") + 
+  scale_color_continuous(name = "mPMBCL (%)", low = "blue", high = "red") +
+  theme(axis.text.y = element_text(hjust = 1, size = 13, vjust=0.5, face = "italic"), 
+        axis.ticks.x = element_blank(),
+        axis.text.x=element_blank())
+
+# export as 3 X 14 pdf
+p + facet_grid(. ~ path)
+
+#**************
+#*  Scatter   *
+#**************
+library(ggplot2)
+library(ggrepel)
+
+freq.data <- read.table("/Volumes/shung/projects/DLBCL_mPMBCL/snv_indel_analysis/recurrence_analysis/pmbcl_v_mpmbcl-recurrent_genes-no_cutoff.for_R.v2.txt", sep = "\t", header = TRUE, row.names = 1)
+
+p <- ggplot(freq.data, aes(x = mpmbcl_proportion, y = pmbcl_proportion)) + 
+  geom_point(aes(size = size, color = mpmbcl_proportion)) +
+  geom_text_repel(label = freq.data$label) +
+  xlab("mPMBCL (% cases mutated)") + ylab("PMBCL (% cases mutated)") +
+  scale_color_continuous(name = "mPMBCL (%)", low = "blue", high = "red") +
+  scale_size_continuous(name = "", labels = NULL, breaks = NULL) +
+  geom_abline(intercept = 0, slope = 1, linetype="dotted")
 
 
 ```
