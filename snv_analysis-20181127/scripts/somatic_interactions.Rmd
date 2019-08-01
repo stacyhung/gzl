@@ -1,0 +1,104 @@
+---
+title: "SNV Heatmap"
+author: "Stacy Hung"
+date: "February 19, 2018"
+output: html_document
+---
+
+This script is used to generate a somatic interaction plot showing statistically significant mutually exclusivity or co-occurence among "driver" genes using pairwise Fisher's exact test (multiple testing correction performed with BH method).
+
+
+## Find signficant somatic interactions for SNVs/indels
+
+```{r}
+library(maftools)
+library(gridExtra)
+library(dplyr)
+
+# read in mutations
+mutations.df <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/snv_indel_datasets/maf/gzl_exomes_incl_GZ222-snvs_indels.maf", sep = "\t", header = TRUE)
+# read in genes of interest
+genes <- read.table("/Volumes/shung/projects/gzl_exomes/data/mediastinal_group_visualization/genes.ordered.CURRENT.txt", sep = "\t", header = TRUE)
+#genes <- read.table("/Volumes/shung/projects/gzl_exomes/data/target_genes.txt", sep = "\t", header = FALSE)
+colnames(genes) <- c("gene")
+
+# filter mutations for genes of interest
+mutations.df <- filter(mutations.df, mutations.df$Hugo_Symbol %in% genes$gene)
+mutations.df$Hugo_Symbol <- factor(mutations.df$Hugo_Symbol)
+
+# plot somatic interactions
+somaticInteractions(maf = mutations.maf, top = 100, pvalue = c(0.05, 0.01))
+
+# oncoplots for EACH mutually exclusive / co-occurring interaction (most significant):
+
+# mutually exclusive interactions: (30x3)
+oncoplot(maf = mutations.maf, genes = c("GNA13", "IL4R"), removeNonMutated = FALSE,
+                     drawRowBar = FALSE, drawColBar = FALSE, titleFontSize = 0, fontSize = 15)
+oncoplot(maf = mutations.maf, genes = c("CISH", "STAT6"), removeNonMutated = FALSE,
+                     drawRowBar = FALSE, drawColBar = FALSE, titleFontSize = 0, fontSize = 15)
+oncoplot(maf = mutations.maf, genes = c("CXCR5", "SOCS1"), removeNonMutated = FALSE,
+                     drawRowBar = FALSE, drawColBar = FALSE, titleFontSize = 0, fontSize = 15)
+
+# co-occurring interactions:
+oncoplot(maf = mutations.maf, genes = c("IRF2BP2", "ACTB"), 
+         removeNonMutated = FALSE, 
+         drawRowBar = FALSE, 
+         drawColBar = FALSE, titleFontSize = 0, fontSize = 15)
+
+laml.titv = titv(maf = mutations.maf, plot = FALSE, useSyn = FALSE)
+# plot titv summary
+plotTiTv(res = laml.titv)
+```
+
+## Find significant somatic interactions for GISTIC peaks
+
+```{r}
+library(tidyr)
+library(dplyr)
+
+# need a MAF file for copy number data
+
+# Min fields and corresponding mappings
+# Hugo_Symobl (required for somaticInteractions) - gain / loss : cytoband : GOI
+# Tumor_Sample_Barcode (required for somaticInteractions) - PA id
+# Variant_Classification
+# Chrosomome
+# Start_Position
+# Variant_Type
+# Reference_Allele
+# Tumor_Seq_Allele1
+# Tumor_Seq_Allele2
+
+gistic.data <- read.table("/Volumes/shung/projects/PMBCL_exomes/gistic/data/gistic_peaks-for_somatic_interactions_plot.txt", sep = "\t", header = TRUE, fill = TRUE)
+
+# transform from wide to long format
+gistic.long <- gather(gistic.data, Tumor_Sample_Barcode, CNA, PA001:PA097, factor_key = TRUE)
+
+# remove patients that do not have a CNA
+gistic.filtered <- filter(gistic.long, gistic.long$CNA > 0)
+
+# change variant classification to meet MAF requirements (needs nonsynonymous mutations)
+# map the actual patient id using the tumor id since the normal has a separate id
+CNA.to.VarClass <- c("1"="Missense_Mutation",
+                     "2"="Nonsense_Mutation")
+gistic.filtered$Variant_Classification <- revalue(as.factor(gistic.filtered$CNA), CNA.to.VarClass)
+
+# add dummy columns
+gistic.filtered$Chromosome <- "chr"
+gistic.filtered$Start_Position <- "1"
+gistic.filtered$End_Position <- "1"
+gistic.filtered$Reference_Allele <- "ref"
+gistic.filtered$Tumor_Seq_Allele2 <- "allele2"
+gistic.filtered$Variant_Type <- "CNA"
+
+# write to MAF
+write.table(gistic.filtered, "/Volumes/shung/projects/PMBCL_exomes/gistic/data/gistic_peaks.maf", sep = "\t", quote = FALSE, row.names = FALSE)
+
+# read in newly created MAF
+mutations.maf <- read.maf("/Volumes/shung/projects/PMBCL_exomes/gistic/data/gistic_peaks.maf")
+
+somaticInteractions(maf = mutations.maf, top = 100, 
+                    pvalue = c(0.99, 0.05),
+                    fontSize = 0.3)
+
+```
