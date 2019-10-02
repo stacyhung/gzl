@@ -1,0 +1,174 @@
+---
+title: "GZL_exomes-signature_analysis-chisq"
+author: "Stacy Hung"
+date: "September 10, 2019"
+output: html_document
+---
+
+There are two general comparisons that we want to make:
+
+1. "Absolute" number of mutations associated with a given signature vs. number of mutations occurring in target panel gene (e.g. SOCS1)
+2. "Absolute" number of patients associated with a given signature vs. number of patients with a particular clinical phenotype (e.g. EBV+ / EBV-)
+
+***Here "absolute" is a very tenuous term used here since this number is based on the highest probability (e.g. each patient's mutational signature is attributed to potentially all 30 COSMIC signatures, with each signature having a different probability - then, the signature with the highest probability is assigned as the "associated" signature for the patient; thus, in this context, all other signatures are ignored).  The assumption here is that the top scoring probability values are very high (high enough that there is substantial doubt the patient would be associated with any other signature).  As this assumption is very unlikely to be biologically true, we need to be very careful and specific with the wording of the results - e.g. "Patients with a majority of mutations likely attributed to the AID/APOBEC signature were significantly linked to EBV+ patients".
+
+
+
+## To modify for contigency table containing mutation frequency data for each gene, and associated subgroups (e.g mediastinal status, EBV status, path group, etc.)
+
+```{r}
+
+contributions <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/mutationalPatterns/output/30_samples/contributions-for_contingency.txt", sep = "\t", header = TRUE)
+
+# first map COSMIC signatures to descriptive names for signatures of interest
+
+# 1. Defective DNA mismatch repair (Signatures #3, 6, 15, 20, 26)
+contributions$signature_DDMR <- contributions$Signature.3 + contributions$Signature.6 + contributions$Signature.15 + 
+  contributions$Signature.20 + contributions$Signature.26
+
+# 2. AID / APOBEC activity (Signatures 2, 13)
+contributions$signature_AID <- contributions$Signature.2 + contributions$Signature.13
+
+# 3. Polymerase-n-mediated somatic hypermutation (Signature #9)
+contributions$signature_hyper <- contributions$Signature.9
+
+# 4. Aging (Signature 1)
+contributions$signature_aging <- contributions$Signature.1
+
+# 5. All other cosmic signatures
+cosmic_signatures <- colnames(contributions[,11:40])
+contributions$signature_other <- rowSums(contributions[, cosmic_signatures]) - 
+  contributions$signature_DDMR - contributions$signature_AID - contributions$signature_hyper - contributions$signature_aging
+
+# extract relevant columns
+keeps <- c(colnames(contributions[,1:10]), colnames(contributions[,41:45]))
+
+contributions.subset <- contributions[, keeps]
+
+# convert from wide to long (group signatures separately from patient characteristics)
+library(tidyr)
+contributions.long <- gather(contributions.subset, signature, contribution, signature_DDMR:signature_other, factor_key = TRUE)
+
+write.table(contributions.subset, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/30_samples_final/contributions_with_clinical_features.txt", sep = "\t", row.names = FALSE, quote = FALSE)
+```
+
+## Try applying the chi-square test to a very specific example involving patient-level COSMIC contribution and EBV status
+
+```{r}
+library(dplyr)
+
+top_contrib <- contributions.long %>% group_by(case_id) %>% top_n(1, contribution)
+write.table(top_contrib, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/30_samples_final/top_contributions_with_clinical_features.txt", sep = "\t", row.names = FALSE, quote = FALSE)
+
+# contingency table for signature vs. EBV status
+EBV_table <- table(top_contrib$signature, top_contrib$EBER_pos)
+EBV_table.df <- as.data.frame.matrix(EBV_table)
+colnames(EBV_table.df) <- c("EBV_neg", "EBV_pos")
+# remove rows with no data:
+EBV_table.df.no0 = EBV_table.df[rowSums(EBV_table.df)!=0, ]
+# apply chi-square test to contingency table
+EBV.chisq <- chisq.test(EBV_table.df.no0)
+# assess specific signatures
+# EBV vs. DDMR signature
+EBV_table.vs.DDMR <- as.data.frame.array(t(EBV_table.df.no0))
+EBV_table.vs.DDMR$signature_not_DDMR <- EBV_table.vs.DDMR$signature_aging + EBV_table.vs.DDMR$signature_other
+EBV_table.vs.DDMR$signature_aging <- NULL
+EBV_table.vs.DDMR$signature_other <- NULL
+EBV_vs_DDMR.chisq <- chisq.test(EBV_table.vs.DDMR)
+# EBV vs. aging signature
+EBV_vs_aging.table <- as.data.frame.array(t(EBV_table.df.no0))
+EBV_vs_aging.table$signature_not_aging <- EBV_vs_aging.table$signature_DDMR + EBV_vs_aging.table$signature_other
+EBV_vs_aging.table$signature_DDMR <- NULL
+EBV_vs_aging.table$signature_other <- NULL
+EBV_vs_aging.chisq <- chisq.test(EBV_vs_aging.table)
+# EBV vs. other signatures
+EBV_vs_other.table <- as.data.frame.array(t(EBV_table.df.no0))
+EBV_vs_other.table$signature_not_other <- EBV_vs_other.table$signature_DDMR + EBV_vs_other.table$signature_aging
+EBV_vs_other.table$signature_DDMR <- NULL
+EBV_vs_other.table$signature_aging <- NULL
+EBV_vs_other.chisq <- chisq.test(EBV_vs_other.table)
+
+
+# contingency table for signature vs. mediastinal status
+med_table <- table(top_contrib$signature, top_contrib$Mediastinal_primary)
+med_table.df <- as.data.frame.matrix(med_table)
+colnames(med_table.df) <- c("mediastinal_nonprimary", "mediastinal_primary")
+# remove rows with no data
+med_table.df.no0 = med_table.df[rowSums(med_table.df)!=0, ]
+# apply chi-square test to contingency table
+med_status.chisq <- chisq.test(med_table.df.no0)
+# assess specific signatures
+# mediastinal status vs. DDMR signature
+med_status_vs_DDMR.table <- as.data.frame(t(med_table.df.no0))
+med_status_vs_DDMR.table$signature_not_DDMR <- med_status_vs_DDMR.table$signature_aging + med_status_vs_DDMR.table$signature_other
+med_status_vs_DDMR.table$signature_aging <- NULL
+med_status_vs_DDMR.table$signature_other <- NULL
+med_status_vs_DDMR.chisq <- chisq.test(med_status_vs_DDMR.table)
+# mediastinal status vs. aging signature
+med_status_vs_aging.table <- as.data.frame(t(med_table.df.no0))
+med_status_vs_aging.table$signature_not_aging <- med_status_vs_aging.table$signature_DDMR + med_status_vs_aging.table$signature_other
+med_status_vs_aging.table$signature_DDMR <- NULL
+med_status_vs_aging.table$signature_other <- NULL
+med_status_vs_aging.chisq <- chisq.test(med_status_vs_aging.table)
+# mediastinal status vs. other signatures
+med_status_vs_other.table <- as.data.frame(t(med_table.df.no0))
+med_status_vs_other.table$signature_not_other <- med_status_vs_other.table$signature_DDMR + med_status_vs_other.table$signature_aging
+med_status_vs_other.table$signature_DDMR <- NULL
+med_status_vs_other.table$signature_aging <- NULL
+med_status_vs_other.chisq <- chisq.test(med_status_vs_other.table)
+
+
+# contingency table for signature vs. path group
+path_table <- table(top_contrib$signature, top_contrib$Path_group_1_2)
+path_table.df <- as.data.frame.matrix(path_table)
+colnames(path_table.df) <- c("Path_group_0_3", "Path_group_1_2")
+# remove rows with no data
+path_table.df.no0 <- path_table.df[rowSums(path_table.df)!=0, ]
+# apply chi-square test to contingency table
+path_grp.chisq <- chisq.test(path_table.df.no0)
+# assess specific signatures
+#  path group vs. DDMR signature
+path_grp_vs_DDMR.table <- as.data.frame(t(path_table.df.no0))
+path_grp_vs_DDMR.table$signature_not_DDMR <- path_grp_vs_DDMR.table$signature_aging + path_grp_vs_DDMR.table$signature_other
+path_grp_vs_DDMR.table$signature_aging <- NULL
+path_grp_vs_DDMR.table$signature_other <- NULL
+path_grp_vs_DDMR.chisq <- chisq.test(path_grp_vs_DDMR.table)
+#  path group vs. aging signature
+path_grp_vs_aging.table <- as.data.frame(t(path_table.df.no0))
+path_grp_vs_aging.table$signature_not_aging <- path_grp_vs_aging.table$signature_DDMR + path_grp_vs_aging.table$signature_other
+path_grp_vs_aging.table$signature_DDMR <- NULL
+path_grp_vs_aging.table$signature_other <- NULL
+path_grp_vs_aging.chisq <- chisq.test(path_grp_vs_aging.table)
+#  path group vs. other signatures
+path_grp_vs_other.table <- as.data.frame(t(path_table.df.no0))
+path_grp_vs_other.table$signature_not_other <- path_grp_vs_other.table$signature_DDMR + path_grp_vs_other.table$signature_aging
+path_grp_vs_other.table$signature_aging <- NULL
+path_grp_vs_other.table$signature_DDMR <- NULL
+path_grp_vs_other.chisq <- chisq.test(path_grp_vs_other.table)
+
+
+# contingency table for signature vs. Age group
+age_grp_table <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/30_samples_final/cosmic_vs_age_grp.txt", sep = "\t", header = TRUE, fill = TRUE, row.names = 1)
+# apply chi-square test to contingency table
+age_grp.chisq <- chisq.test(age_grp_table)
+# assess specific signatures
+# age group vs. DDMR signature
+age_grp_vs_DDMR.table <- as.data.frame(t(age_grp_table))
+age_grp_vs_DDMR.table$signature_not_DDMR <- age_grp_vs_DDMR.table$signature_aging + age_grp_vs_DDMR.table$signature_other
+age_grp_vs_DDMR.table$signature_aging <- NULL
+age_grp_vs_DDMR.table$signature_other <- NULL
+age_grp_vs_DDMR.chisq <- chisq.test(age_grp_vs_DDMR.table)
+# age group vs. aging signature
+age_grp_vs_aging.table <- as.data.frame(t(age_grp_table))
+age_grp_vs_aging.table$signature_not_aging <- age_grp_vs_aging.table$signature_DDMR + age_grp_vs_aging.table$signature_other
+age_grp_vs_aging.table$signature_DDMR <- NULL
+age_grp_vs_aging.table$signature_other <- NULL
+age_grp_vs_aging.chisq <- chisq.test(age_grp_vs_aging.table)
+# age group vs. other signatures
+age_grp_vs_other.table <- as.data.frame(t(age_grp_table))
+age_grp_vs_other.table$signature_not_other <- age_grp_vs_other.table$signature_DDMR + age_grp_vs_other.table$signature_aging
+age_grp_vs_other.table$signature_DDMR <- NULL
+age_grp_vs_other.table$signature_aging <- NULL
+age_grp_vs_other.chisq <- chisq.test(age_grp_vs_other.table)
+```
+
