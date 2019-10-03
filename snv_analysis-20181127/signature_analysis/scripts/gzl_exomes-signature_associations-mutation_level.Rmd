@@ -21,64 +21,10 @@ Phenotypic groups:
 (3) Age group (<= 45, 45-60, >= 60)
 
 
-## Analyze associations 
+## Load data
 
 ```{r}
-library(ggplot2)
-library(tidyr)
-
 plot_data <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/mutationalPatterns/output/30_samples/GZ-optimal_contributions-COSMIC.normalized.grouped.eber_status.txt", sep = "\t", header = TRUE, stringsAsFactors = FALSE)
-
-# specify order of patients:
-patients.order <- c("GZ-048", "GZ-180", "GZ-178", "GZ-BCC-020", "GZ-116", "GZ-BCC-013", "GZ-BCC-054", "GZ-176", "GZ-046", "GZ-184", "GZ-149", "GZ-044", "GZ-230", "GZ-092", "GZ-152", "GZ-095", "GZ-267", "GZ-086", "GZ-099", "GZ-068", "GZ-222", "GZ-062", "GZ-310", "GZ-197", "GZ-BCC-008", "GZ-235", "GZ-294", "GZ-064", "GZ-301", "GZ-032")
-# specify order of signature groups:
-sig_groups.order <- c("Defective DNA mismatch repair (3, 6, 15, 20, 26)",
-                      "AID / APOBEC activity (2, 13)",
-                      "Polymerase-n-mediated somatic hypermutation (9)", 
-                      "Aging (1)",
-                      "All other COSMIC signatures")
-
-p1 <- ggplot(data = plot_data, 
-             aes(factor(x = patient, levels = patients.order), 
-                 y = as.numeric(contribution), 
-                 fill = factor(signature_group, levels = sig_groups.order),
-                 color = EBER_status)) + 
-  geom_bar(stat = "identity", width = 0.6) + 
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  scale_fill_manual(name = "Signature Group",
-                    values = c("Aging (1)" = "rosybrown1",
-                               "AID / APOBEC activity (2, 13)" = "lightgreen", 
-                               "Defective DNA mismatch repair (3, 6, 15, 20, 26)" = "mediumpurple1",
-                               "Polymerase-n-mediated somatic hypermutation (9)" = "dodgerblue", 
-                               "All other COSMIC signatures" = "gray")) +
-  scale_colour_manual(name = "EBER status", 
-                      values = c("Negative"="black", "Positive"="red")) +
-  xlab("") + 
-  ylab("Number of mutations")
-  
-# for a very fine outline (use inside geom_bar):
-# size = 0.2
-
-signature_groups.order <- c("All other COSMIC signatures", 
-                            "Aging (1)", 
-                            "Defective DNA mismatch repair (3, 6, 15, 20, 26)",
-                            "AID / APOBEC activity (2, 13)",
-                            "Polymerase-n-mediated somatic hypermutation (9)")
-
-# barplot showing total number of mutations by signature (and stacked by EBV- vs. EBV+ cases)
-p2 <- ggplot(data = plot_data, 
-             aes(factor(x = signature_group, levels = rev(signature_groups.order)),
-                 y = as.numeric(contribution), 
-                 fill = EBER_status)) + 
-  geom_bar(stat = "identity", width = 0.6) + 
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  scale_fill_manual(name = "EBER status",
-                    values = c("Negative" = "black",
-                               "Positive" = "red")) +
-  xlab("") + 
-  ylab("Number of mutations") +
-  coord_flip()
-
 ```
 
 
@@ -87,27 +33,32 @@ p2 <- ggplot(data = plot_data,
 ```{r}
 library(dplyr)
 
-EBV_pos.AID_sig.data <- filter(plot_data, EBER_status == "Positive" & signature_group == "AID / APOBEC activity (2, 13)")
-EBV_pos.not_AID_sig.data <- filter(plot_data, EBER_status == "Positive" & !(signature_group == "AID / APOBEC activity (2, 13)"))
-EBV_neg.AID_sig.data <- filter(plot_data, EBER_status == "Negative" & signature_group == "AID / APOBEC activity (2, 13)")
-EBV_neg.not_AID_sig.data <- filter(plot_data, EBER_status == "Negative" & !(signature_group == "AID / APOBEC activity (2, 13)"))
+SIG_AID = "AID / APOBEC activity (2, 13)"
+SIG_DDMR = "Defective DNA mismatch repair (3, 6, 15, 20, 26)"
+SIG_HYPER = "Polymerase-n-mediated somatic hypermutation (9)"
+SIG_AGING = "Aging (1)"
+SIG_OTHERS = "All other COSMIC signatures"
+
+EBV_pos.AID_sig.data <- filter(plot_data, EBER_status == "Positive" & signature_group == SIG_AID)
+EBV_pos.not_AID_sig.data <- filter(plot_data, EBER_status == "Positive" & !(signature_group == SIG_AID))
+EBV_neg.AID_sig.data <- filter(plot_data, EBER_status == "Negative" & signature_group == SIG_AID)
+EBV_neg.not_AID_sig.data <- filter(plot_data, EBER_status == "Negative" & !(signature_group == SIG_AID))
 
 EBV_pos.AID_sig.num <- sum(EBV_pos.AID_sig.data$contribution) # 17
 EBV_pos.not_AID_sig.num <- sum(EBV_pos.not_AID_sig.data$contribution) # 633
 EBV_neg.AID_sig.num <- sum(EBV_neg.AID_sig.data$contribution) # 267
 EBV_neg.not_AID_sig.num <- sum(EBV_neg.not_AID_sig.data$contribution) # 5158
 
-EBV_pos.total <- EBV_pos.AID_sig.num + EBV_pos.not_AID_sig.num
-EBV_neg.total <- EBV_neg.AID_sig.num + EBV_neg.not_AID_sig.num
+#EBV_pos.total <- EBV_pos.AID_sig.num + EBV_pos.not_AID_sig.num
+#EBV_neg.total <- EBV_neg.AID_sig.num + EBV_neg.not_AID_sig.num
 
 # chi-square test
 sam <- array(dim = c(2,2))
 sam[1, ] <- c(EBV_pos.AID_sig.num, EBV_neg.AID_sig.num)
-sam[2, ] <- c(EBV_pos.total, EBV_neg.total)
-  
+sam[2, ] <- c(EBV_pos.not_AID_sig.num, EBV_neg.not_AID_sig.num)
+
 # Chi-Square test to assess if AID/APOBEC in EBV+ cases is more different than expected
 pvalue <- chisq.test(sam)$p.value # 0.01326989
-
 ```
 
 ## Calculate enrichment of defective DNA mismatch repair signature in EBV+ vs. EBV- groups
@@ -115,28 +66,26 @@ pvalue <- chisq.test(sam)$p.value # 0.01326989
 ```{r}
 library(dplyr)
 
-EBV_pos.DDMR_sig.data <- filter(plot_data, EBER_status == "Positive" & signature_group == "Defective DNA mismatch repair (3, 6, 15, 20, 26)")
-EBV_pos.not_DDMR_sig.data <- filter(plot_data, EBER_status == "Positive" & !(signature_group == "Defective DNA mismatch repair (3, 6, 15, 20, 26)"))
-EBV_neg.DDMR_sig.data <- filter(plot_data, EBER_status == "Negative" & signature_group == "Defective DNA mismatch repair (3, 6, 15, 20, 26)")
-EBV_neg.not_DDMR_sig.data <- filter(plot_data, EBER_status == "Negative" & !(signature_group == "Defective DNA mismatch repair (3, 6, 15, 20, 26)"))
+EBV_pos.DDMR_sig.data <- filter(plot_data, EBER_status == "Positive" & signature_group == SIG_DDMR)
+EBV_pos.not_DDMR_sig.data <- filter(plot_data, EBER_status == "Positive" & !(signature_group == SIG_DDMR))
+EBV_neg.DDMR_sig.data <- filter(plot_data, EBER_status == "Negative" & signature_group == SIG_DDMR)
+EBV_neg.not_DDMR_sig.data <- filter(plot_data, EBER_status == "Negative" & !(signature_group == SIG_DDMR))
 
 EBV_pos.DDMR_sig.num <- sum(EBV_pos.DDMR_sig.data$contribution) # 191.3075
 EBV_pos.not_DDMR_sig.num <- sum(EBV_pos.not_DDMR_sig.data$contribution) # 458.9504
 EBV_neg.DDMR_sig.num <- sum(EBV_neg.DDMR_sig.data$contribution) # 1458.566
 EBV_neg.not_DDMR_sig.num <- sum(EBV_neg.not_DDMR_sig.data$contribution) # 3966.872
 
-EBV_pos.total <- EBV_pos.DDMR_sig.num + EBV_pos.not_DDMR_sig.num
-EBV_neg.total <- EBV_neg.DDMR_sig.num + EBV_neg.not_DDMR_sig.num
+#EBV_pos.total <- EBV_pos.DDMR_sig.num + EBV_pos.not_DDMR_sig.num
+#EBV_neg.total <- EBV_neg.DDMR_sig.num + EBV_neg.not_DDMR_sig.num
 
 # chi-square test
 sam <- array(dim = c(2,2))
 sam[1, ] <- c(EBV_pos.DDMR_sig.num, EBV_neg.DDMR_sig.num)
-sam[2, ] <- c(EBV_pos.total, EBV_neg.total)
+sam[2, ] <- c(EBV_pos.not_DDMR_sig.num, EBV_neg.not_DDMR_sig.num)
   
 # Chi-Square test to assess if DDMR in EBV+ cases is more different than expected
 pvalue <- chisq.test(sam)$p.value # 0.3233782
-
-
 ```
 
 ## Boxplot of normalized contributions of AID/APOBEC mutations in EBV+ vs. EBV- patients 
