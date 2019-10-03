@@ -21,17 +21,10 @@ Phenotypic groups:
 (3) Age group (<= 45, 45-60, >= 60)
 
 
-## Load data
+## Load data and set variables
 
 ```{r}
-plot_data <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/mutationalPatterns/output/30_samples/GZ-optimal_contributions-COSMIC.normalized.grouped.eber_status.txt", sep = "\t", header = TRUE, stringsAsFactors = FALSE)
-```
-
-
-## Calculate enrichment of the AID/APOBEC signature in EBV vs. EBV- groups
-
-```{r}
-library(dplyr)
+plot_data <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/mutationalPatterns/output/30_samples/GZ-optimal_contributions-COSMIC.normalized.grouped.all_phenotypes.txt", sep = "\t", header = TRUE, stringsAsFactors = FALSE)
 
 SIG_AID = "AID / APOBEC activity (2, 13)"
 SIG_DDMR = "Defective DNA mismatch repair (3, 6, 15, 20, 26)"
@@ -39,10 +32,33 @@ SIG_HYPER = "Polymerase-n-mediated somatic hypermutation (9)"
 SIG_AGING = "Aging (1)"
 SIG_OTHERS = "All other COSMIC signatures"
 
-EBV_pos.AID_sig.data <- filter(plot_data, EBER_status == "Positive" & signature_group == SIG_AID)
-EBV_pos.not_AID_sig.data <- filter(plot_data, EBER_status == "Positive" & !(signature_group == SIG_AID))
-EBV_neg.AID_sig.data <- filter(plot_data, EBER_status == "Negative" & signature_group == SIG_AID)
-EBV_neg.not_AID_sig.data <- filter(plot_data, EBER_status == "Negative" & !(signature_group == SIG_AID))
+EBV_POS = "Positive"
+EBV_NEG = "Negative"
+
+MED_PRIMARY = 1
+MED_NOT_PRIMARY = 0
+
+PATH_GRP_1_2 = 1
+PATH_GRP_0_3 = 0
+
+AGE_45_UNDER = "<= 45"
+AGE_45_TO_60 = "45 < age < 60"
+AGE_60_PLUS = ">= 60"
+```
+
+## #########################################################################
+## Chi-square tests for EBV status vs. different COSMIC signatures
+## #########################################################################
+
+## Calculate enrichment of the AID/APOBEC signature in EBV vs. EBV- groups
+
+```{r}
+library(dplyr)
+
+EBV_pos.AID_sig.data <- filter(plot_data, EBER_status == EBV_POS & signature_group == SIG_AID)
+EBV_pos.not_AID_sig.data <- filter(plot_data, EBER_status == EBV_POS & !(signature_group == SIG_AID))
+EBV_neg.AID_sig.data <- filter(plot_data, EBER_status == EBV_NEG & signature_group == SIG_AID)
+EBV_neg.not_AID_sig.data <- filter(plot_data, EBER_status == EBV_NEG & !(signature_group == SIG_AID))
 
 EBV_pos.AID_sig.num <- sum(EBV_pos.AID_sig.data$contribution) # 17
 EBV_pos.not_AID_sig.num <- sum(EBV_pos.not_AID_sig.data$contribution) # 633
@@ -58,7 +74,7 @@ sam[1, ] <- c(EBV_pos.AID_sig.num, EBV_neg.AID_sig.num)
 sam[2, ] <- c(EBV_pos.not_AID_sig.num, EBV_neg.not_AID_sig.num)
 
 # Chi-Square test to assess if AID/APOBEC in EBV+ cases is more different than expected
-pvalue <- chisq.test(sam)$p.value # 0.01326989
+pvalue <- chisq.test(sam)$p.value # 0.009979839; previously 0.01326989 (when using EBV_pos.total and EBV_neg.total)
 ```
 
 ## Calculate enrichment of defective DNA mismatch repair signature in EBV+ vs. EBV- groups
@@ -66,10 +82,10 @@ pvalue <- chisq.test(sam)$p.value # 0.01326989
 ```{r}
 library(dplyr)
 
-EBV_pos.DDMR_sig.data <- filter(plot_data, EBER_status == "Positive" & signature_group == SIG_DDMR)
-EBV_pos.not_DDMR_sig.data <- filter(plot_data, EBER_status == "Positive" & !(signature_group == SIG_DDMR))
-EBV_neg.DDMR_sig.data <- filter(plot_data, EBER_status == "Negative" & signature_group == SIG_DDMR)
-EBV_neg.not_DDMR_sig.data <- filter(plot_data, EBER_status == "Negative" & !(signature_group == SIG_DDMR))
+EBV_pos.DDMR_sig.data <- filter(plot_data, EBER_status == EBV_POS & signature_group == SIG_DDMR)
+EBV_pos.not_DDMR_sig.data <- filter(plot_data, EBER_status == EBV_POS & !(signature_group == SIG_DDMR))
+EBV_neg.DDMR_sig.data <- filter(plot_data, EBER_status == EBV_NEG & signature_group == SIG_DDMR)
+EBV_neg.not_DDMR_sig.data <- filter(plot_data, EBER_status == EBV_NEG & !(signature_group == SIG_DDMR))
 
 EBV_pos.DDMR_sig.num <- sum(EBV_pos.DDMR_sig.data$contribution) # 191.3075
 EBV_pos.not_DDMR_sig.num <- sum(EBV_pos.not_DDMR_sig.data$contribution) # 458.9504
@@ -85,8 +101,330 @@ sam[1, ] <- c(EBV_pos.DDMR_sig.num, EBV_neg.DDMR_sig.num)
 sam[2, ] <- c(EBV_pos.not_DDMR_sig.num, EBV_neg.not_DDMR_sig.num)
   
 # Chi-Square test to assess if DDMR in EBV+ cases is more different than expected
-pvalue <- chisq.test(sam)$p.value # 0.3233782
+pvalue <- chisq.test(sam)$p.value # 0.1843208; previously 0.3233782 (when using EBV_pos.total and EBV_neg.total)
 ```
+
+## Calculate enrichment of hypermutation signature in EBV+ vs. EBV- groups
+
+```{r}
+EBV_pos.hyper_sig.num <- sum((filter(plot_data, EBER_status == EBV_POS & signature_group == SIG_HYPER))$contribution)
+EBV_pos.not_hyper_sig.num <- sum((filter(plot_data, EBER_status == EBV_POS & !(signature_group == SIG_HYPER)))$contribution)
+EBV_neg.hyper_sig.num <- sum((filter(plot_data, EBER_status == EBV_NEG & signature_group == SIG_HYPER))$contribution)
+EBV_neg.not_hyper_sig.num <- sum((filter(plot_data, EBER_status == EBV_NEG & !(signature_group == SIG_HYPER)))$contribution)
+
+# create contingency table for chi-square test
+sam <- array(dim = c(2,2))
+sam[1, ] <- c(EBV_pos.hyper_sig.num, EBV_neg.hyper_sig.num) # 25, 139
+sam[2, ] <- c(EBV_pos.not_hyper_sig.num, EBV_neg.not_hyper_sig.num) # 625, 5286
+
+# apply chi-square test to assess if hypermutation signature is linked to EBV status
+pval <- chisq.test(sam)$p.value # 0.07539388
+```
+
+## Calculate enrichment of aging signature in EBV+ vs. EBV- groups
+
+```{r}
+EBV_pos.aging_sig.num <- sum((filter(plot_data, EBER_status == EBV_POS & signature_group == SIG_AGING))$contribution)
+EBV_pos.not_aging_sig.num <- sum((filter(plot_data, EBER_status == EBV_POS & !(signature_group == SIG_AGING)))$contribution)
+EBV_neg.aging_sig.num <- sum((filter(plot_data, EBER_status == EBV_NEG & signature_group == SIG_AGING))$contribution)
+EBV_neg.not_aging_sig.num <- sum((filter(plot_data, EBER_status == EBV_NEG & !(signature_group == SIG_AGING)))$contribution)
+
+# create contingency table for chi-square test
+sam <- array(dim = c(2,2))
+sam[1, ] <- c(EBV_pos.aging_sig.num, EBV_neg.aging_sig.num) # 155, 1626
+sam[2, ] <- c(EBV_pos.not_aging_sig.num, EBV_neg.not_aging_sig.num) # 495, 3800
+
+# apply chi-square test to assess if hypermutation signature is linked to EBV status
+pval <- chisq.test(sam)$p.value # 0.001396633
+```
+
+## Calculate enrichment of all other COSMIC signatures in EBV+ vs. EBV- groups
+
+```{r}
+EBV_pos.others_sig.num <- sum((filter(plot_data, EBER_status == EBV_POS & signature_group == SIG_OTHERS))$contribution)
+EBV_pos.not_others_sig.num <- sum((filter(plot_data, EBER_status == EBV_POS & !(signature_group == SIG_OTHERS)))$contribution)
+EBV_neg.others_sig.num <- sum((filter(plot_data, EBER_status == EBV_NEG & signature_group == SIG_OTHERS))$contribution)
+EBV_neg.not_others_sig.num <- sum((filter(plot_data, EBER_status == EBV_NEG & !(signature_group == SIG_OTHERS)))$contribution)
+
+# create contingency table for chi-square test
+sam <- array(dim = c(2,2))
+sam[1, ] <- c(EBV_pos.others_sig.num, EBV_neg.others_sig.num) # 262, 1935
+sam[2, ] <- c(EBV_pos.not_others_sig.num, EBV_neg.not_others_sig.num) # 388, 3490
+
+# apply chi-square test to assess if hypermutation signature is linked to EBV status
+pval <- chisq.test(sam)$p.value # 0.02224143
+```
+
+
+## #########################################################################
+## Chi-square tests for mediastinal status vs. different COSMIC signatures
+## #########################################################################
+
+## Test association between mediastinal status and AID/APOBEC activity signature
+
+```{r}
+Med_1.AID_sig.num <- sum((filter(plot_data, mediastinal_status == MED_PRIMARY & signature_group == SIG_AID))$contribution)
+Med_1.not_AID_sig.num <- sum((filter(plot_data, mediastinal_status == MED_PRIMARY & !(signature_group == SIG_AID)))$contribution)
+Med_not_1.AID_sig.num <- sum((filter(plot_data, mediastinal_status == MED_NOT_PRIMARY & signature_group == SIG_AID))$contribution)
+Med_not_1.not_AID_sig.num <- sum((filter(plot_data, mediastinal_status == MED_NOT_PRIMARY & !(signature_group == SIG_AID)))$contribution)
+
+# create contingency table for chi-square test
+sam <- array(dim = c(2,2))
+sam[1, ] <- c(Med_1.AID_sig.num, Med_not_1.AID_sig.num) # 167, 116
+sam[2, ] <- c(Med_1.not_AID_sig.num, Med_not_1.not_AID_sig.num) # 4353, 1438
+
+# apply chi-square test to assess if hypermutation signature is linked to EBV status
+pval <- chisq.test(sam)$p.value # 1.725684e-09
+```
+
+## Test association between mediastinal status and DNA mismatch repair signature
+
+```{r}
+Med_1.DDMR_sig.num <- sum((filter(plot_data, mediastinal_status == MED_PRIMARY & signature_group == SIG_DDMR))$contribution)
+Med_1.not_DDMR_sig.num <- sum((filter(plot_data, mediastinal_status == MED_PRIMARY & !(signature_group == SIG_DDMR)))$contribution)
+Med_not_1.DDMR_sig.num <- sum((filter(plot_data, mediastinal_status == MED_NOT_PRIMARY & signature_group == SIG_DDMR))$contribution)
+Med_not_1.not_DDMR_sig.num <- sum((filter(plot_data, mediastinal_status == MED_NOT_PRIMARY & !(signature_group == SIG_DDMR)))$contribution)
+
+# create contingency table for chi-square test
+sam <- array(dim = c(2,2))
+sam[1, ] <- c(Med_1.DDMR_sig.num, Med_not_1.DDMR_sig.num) # 
+sam[2, ] <- c(Med_1.not_DDMR_sig.num, Med_not_1.not_DDMR_sig.num) # 
+
+# apply chi-square test to assess if hypermutation signature is linked to EBV status
+pval <- chisq.test(sam)$p.value # 0.1837358
+```
+
+## Test association between mediastinal status and hypermutation signature
+
+```{r}
+Med_1.hyper_sig.num <- sum((filter(plot_data, mediastinal_status == MED_PRIMARY & signature_group == SIG_HYPER))$contribution)
+Med_1.not_hyper_sig.num <- sum((filter(plot_data, mediastinal_status == MED_PRIMARY & !(signature_group == SIG_HYPER)))$contribution)
+Med_not_1.hyper_sig.num <- sum((filter(plot_data, mediastinal_status == MED_NOT_PRIMARY & signature_group == SIG_HYPER))$contribution)
+Med_not_1.not_hyper_sig.num <- sum((filter(plot_data, mediastinal_status == MED_NOT_PRIMARY & !(signature_group == SIG_HYPER)))$contribution)
+
+# create contingency table for chi-square test
+sam <- array(dim = c(2,2))
+sam[1, ] <- c(Med_1.hyper_sig.num, Med_not_1.hyper_sig.num) # 139, 25
+sam[2, ] <- c(Med_1.not_hyper_sig.num, Med_not_1.not_hyper_sig.num) # 4381, 1530 
+
+# apply chi-square test to assess if hypermutation signature is linked to EBV status
+pval <- chisq.test(sam)$p.value # 0.002753807
+```
+
+## Test association between mediastinal status and aging signature
+
+```{r}
+Med_1.aging_sig.num <- sum((filter(plot_data, mediastinal_status == MED_PRIMARY & signature_group == SIG_AGING))$contribution)
+Med_1.not_aging_sig.num <- sum((filter(plot_data, mediastinal_status == MED_PRIMARY & !(signature_group == SIG_AGING)))$contribution)
+Med_not_1.aging_sig.num <- sum((filter(plot_data, mediastinal_status == MED_NOT_PRIMARY & signature_group == SIG_AGING))$contribution)
+Med_not_1.not_aging_sig.num <- sum((filter(plot_data, mediastinal_status == MED_NOT_PRIMARY & !(signature_group == SIG_AGING)))$contribution)
+
+# create contingency table for chi-square test
+sam <- array(dim = c(2,2))
+sam[1, ] <- c(Med_1.aging_sig.num, Med_not_1.aging_sig.num) # 1423, 357
+sam[2, ] <- c(Med_1.not_aging_sig.num, Med_not_1.not_aging_sig.num) # 3097, 1198 
+
+# apply chi-square test to assess if hypermutation signature is linked to EBV status
+pval <- chisq.test(sam)$p.value # 2.376584e-10
+```
+
+## Test association between mediastinal status and all other COSMIC signatures
+
+```{r}
+Med_1.others_sig.num <- sum((filter(plot_data, mediastinal_status == MED_PRIMARY & signature_group == SIG_OTHERS))$contribution)
+Med_1.not_others_sig.num <- sum((filter(plot_data, mediastinal_status == MED_PRIMARY & !(signature_group == SIG_OTHERS)))$contribution)
+Med_not_1.others_sig.num <- sum((filter(plot_data, mediastinal_status == MED_NOT_PRIMARY & signature_group == SIG_OTHERS))$contribution)
+Med_not_1.not_others_sig.num <- sum((filter(plot_data, mediastinal_status == MED_NOT_PRIMARY & !(signature_group == SIG_OTHERS)))$contribution)
+
+# create contingency table for chi-square test
+sam <- array(dim = c(2,2))
+sam[1, ] <- c(Med_1.others_sig.num, Med_not_1.others_sig.num) # 1583, 614
+sam[2, ] <- c(Med_1.not_others_sig.num, Med_not_1.not_others_sig.num) # 2937, 941
+
+# apply chi-square test to assess if hypermutation signature is linked to EBV status
+pval <- chisq.test(sam)$p.value # 0.001892591
+```
+
+
+
+## #########################################################################
+## Chi-square tests for pathology grouping vs. different COSMIC signatures
+## #########################################################################
+
+## Test association between pathology group and the AID/APOBEC activity signature
+
+```{r}
+path_1_2.AID_sig.num <- sum((filter(plot_data, path_group == PATH_GRP_1_2 & signature_group == SIG_AID))$contribution)
+path_1_2.not_AID_sig.num <- sum((filter(plot_data, path_group == PATH_GRP_1_2 & !(signature_group == SIG_AID)))$contribution)
+path_0_3.AID_sig.num <- sum((filter(plot_data, path_group == PATH_GRP_0_3 & signature_group == SIG_AID))$contribution)
+path_0_3.not_AID_sig.num <- sum((filter(plot_data, path_group == PATH_GRP_0_3 & !(signature_group == SIG_AID)))$contribution)
+
+# create contingency table for chi-square test
+sam <- array(dim = c(2,2))
+sam[1, ] <- c(path_1_2.AID_sig.num, path_0_3.AID_sig.num) # 269, 15
+sam[2, ] <- c(path_1_2.not_AID_sig.num, path_0_3.not_AID_sig.num) # 5081, 710
+
+# apply chi-square test to assess if hypermutation signature is linked to EBV status
+pval <- chisq.test(sam)$p.value # 0.0005758003
+```
+
+## Test association between pathology group and the DNA mismatch repair signature
+
+```{r}
+path_1_2.DDMR_sig.num <- sum((filter(plot_data, path_group == PATH_GRP_1_2 & signature_group == SIG_DDMR))$contribution)
+path_1_2.not_DDMR_sig.num <- sum((filter(plot_data, path_group == PATH_GRP_1_2 & !(signature_group == SIG_DDMR)))$contribution)
+path_0_3.DDMR_sig.num <- sum((filter(plot_data, path_group == PATH_GRP_0_3 & signature_group == SIG_DDMR))$contribution)
+path_0_3.not_DDMR_sig.num <- sum((filter(plot_data, path_group == PATH_GRP_0_3 & !(signature_group == SIG_DDMR)))$contribution)
+
+# create contingency table for chi-square test
+sam <- array(dim = c(2,2))
+sam[1, ] <- c(path_1_2.DDMR_sig.num, path_0_3.DDMR_sig.num) # 1427, 223
+sam[2, ] <- c(path_1_2.not_DDMR_sig.num, path_0_3.not_DDMR_sig.num) # 3924, 502
+
+# apply chi-square test to assess if hypermutation signature is linked to EBV status
+pval <- chisq.test(sam)$p.value # 0.02151707
+```
+
+## Test association between pathology group and the hypermutation signature
+
+```{r}
+path_1_2.hyper_sig.num <- sum((filter(plot_data, path_group == PATH_GRP_1_2 & signature_group == SIG_HYPER))$contribution)
+path_1_2.not_hyper_sig.num <- sum((filter(plot_data, path_group == PATH_GRP_1_2 & !(signature_group == SIG_HYPER)))$contribution)
+path_0_3.hyper_sig.num <- sum((filter(plot_data, path_group == PATH_GRP_0_3 & signature_group == SIG_HYPER))$contribution)
+path_0_3.not_hyper_sig.num <- sum((filter(plot_data, path_group == PATH_GRP_0_3 & !(signature_group == SIG_HYPER)))$contribution)
+
+# create contingency table for chi-square test
+sam <- array(dim = c(2,2))
+sam[1, ] <- c(path_1_2.hyper_sig.num, path_0_3.hyper_sig.num) # 146, 18
+sam[2, ] <- c(path_1_2.not_hyper_sig.num, path_0_3.not_hyper_sig.num) # 5204, 708
+
+# apply chi-square test to assess if hypermutation signature is linked to EBV status
+pval <- chisq.test(sam)$p.value # 0.7479971
+```
+
+## Test association between pathology group and the aging signature
+
+```{r}
+path_1_2.aging_sig.num <- sum((filter(plot_data, path_group == PATH_GRP_1_2 & signature_group == SIG_AGING))$contribution)
+path_1_2.not_aging_sig.num <- sum((filter(plot_data, path_group == PATH_GRP_1_2 & !(signature_group == SIG_AGING)))$contribution)
+path_0_3.aging_sig.num <- sum((filter(plot_data, path_group == PATH_GRP_0_3 & signature_group == SIG_AGING))$contribution)
+path_0_3.not_aging_sig.num <- sum((filter(plot_data, path_group == PATH_GRP_0_3 & !(signature_group == SIG_AGING)))$contribution)
+
+# create contingency table for chi-square test
+sam <- array(dim = c(2,2))
+sam[1, ] <- c(path_1_2.aging_sig.num, path_0_3.aging_sig.num) # 1582, 199
+sam[2, ] <- c(path_1_2.not_aging_sig.num, path_0_3.not_aging_sig.num) # 3768, 527
+
+# apply chi-square test to assess if hypermutation signature is linked to EBV status
+pval <- chisq.test(sam)$p.value # 0.2483097
+```
+
+## Test association between pathology group and all other COSMIC signatures
+
+```{r}
+path_1_2.others_sig.num <- sum((filter(plot_data, path_group == PATH_GRP_1_2 & signature_group == SIG_OTHERS))$contribution)
+path_1_2.not_others_sig.num <- sum((filter(plot_data, path_group == PATH_GRP_1_2 & !(signature_group == SIG_OTHERS)))$contribution)
+path_0_3.others_sig.num <- sum((filter(plot_data, path_group == PATH_GRP_0_3 & signature_group == SIG_OTHERS))$contribution)
+path_0_3.not_others_sig.num <- sum((filter(plot_data, path_group == PATH_GRP_0_3 & !(signature_group == SIG_OTHERS)))$contribution)
+
+# create contingency table for chi-square test
+sam <- array(dim = c(2,2))
+sam[1, ] <- c(path_1_2.others_sig.num, path_0_3.others_sig.num) # 1927, 270
+sam[2, ] <- c(path_1_2.not_others_sig.num, path_0_3.not_others_sig.num) # 3424, 455
+
+# apply chi-square test to assess if hypermutation signature is linked to EBV status
+pval <- chisq.test(sam)$p.value # 0.5305204
+```
+
+
+## #########################################################################
+## Chi-square tests for age groups vs. different COSMIC signatures
+## #########################################################################
+
+## Test association between age groups and the AID/APOBEC activity signature
+
+```{r}
+age_45_under.AID_sig.num <- sum((filter(plot_data, age_group == AGE_45_UNDER & signature_group == SIG_AID))$contribution)
+age_45_to_60.AID_sig.num <- sum((filter(plot_data, age_group == AGE_45_TO_60 & signature_group == SIG_AID))$contribution)
+age_60_plus.AID_sig.num <- sum((filter(plot_data, age_group == AGE_60_PLUS & signature_group == SIG_AID))$contribution)
+
+age_45_under.not_AID_sig.num <- sum((filter(plot_data, age_group == AGE_45_UNDER & !(signature_group == SIG_AID)))$contribution)
+age_45_to_60.not_AID_sig.num <- sum((filter(plot_data, age_group == AGE_45_TO_60 & !(signature_group == SIG_AID)))$contribution)
+age_60_plus.not_AID_sig.num <- sum((filter(plot_data, age_group == AGE_60_PLUS & !(signature_group == SIG_AID)))$contribution)
+
+# create contingency table for chi-square test
+sam <- array(dim = c(2,3))
+sam[1, ] <- c(age_45_under.AID_sig.num, age_45_to_60.AID_sig.num, age_60_plus.AID_sig.num) # 161, 21, 102
+sam[2, ] <- c(age_45_under.not_AID_sig.num, age_45_to_60.not_AID_sig.num, age_60_plus.not_AID_sig.num) # 2649, 2437, 705
+
+# apply chi-square test to assess if hypermutation signature is linked to EBV status
+pval <- chisq.test(sam)$p.value # 1.524559e-44
+```
+
+## Test association between age groups and the DNA mismatch repair signature
+
+```{r}
+age_45_under.DDMR_sig.num <- sum((filter(plot_data, age_group == AGE_45_UNDER & signature_group == SIG_DDMR))$contribution)
+age_45_to_60.DDMR_sig.num <- sum((filter(plot_data, age_group == AGE_45_TO_60 & signature_group == SIG_DDMR))$contribution)
+age_60_plus.DDMR_sig.num <- sum((filter(plot_data, age_group == AGE_60_PLUS & signature_group == SIG_DDMR))$contribution)
+
+age_45_under.not_DDMR_sig.num <- sum((filter(plot_data, age_group == AGE_45_UNDER & !(signature_group == SIG_DDMR)))$contribution)
+age_45_to_60.not_DDMR_sig.num <- sum((filter(plot_data, age_group == AGE_45_TO_60 & !(signature_group == SIG_DDMR)))$contribution)
+age_60_plus.not_DDMR_sig.num <- sum((filter(plot_data, age_group == AGE_60_PLUS & !(signature_group == SIG_DDMR)))$contribution)
+
+# create contingency table for chi-square test
+sam <- array(dim = c(2,3))
+sam[1, ] <- c(age_45_under.DDMR_sig.num, age_45_to_60.DDMR_sig.num, age_60_plus.DDMR_sig.num) # 789, 643, 218
+sam[2, ] <- c(age_45_under.not_DDMR_sig.num, age_45_to_60.not_DDMR_sig.num, age_60_plus.not_DDMR_sig.num) # 2022, 1815, 589
+
+# apply chi-square test to assess if hypermutation signature is linked to EBV status
+pval <- chisq.test(sam)$p.value # 1.524559e-44
+```
+
+## Test association between age groups and the hypermutation signature
+
+```{r}
+age_45_under.hyper_sig.num <- sum((filter(plot_data, age_group == AGE_45_UNDER & signature_group == SIG_HYPER))$contribution)
+age_45_to_60.hyper_sig.num <- sum((filter(plot_data, age_group == AGE_45_TO_60 & signature_group == SIG_HYPER))$contribution)
+age_60_plus.hyper_sig.num <- sum((filter(plot_data, age_group == AGE_60_PLUS & signature_group == SIG_HYPER))$contribution)
+
+age_45_under.not_hyper_sig.num <- sum((filter(plot_data, age_group == AGE_45_UNDER & !(signature_group == SIG_HYPER)))$contribution)
+age_45_to_60.not_hyper_sig.num <- sum((filter(plot_data, age_group == AGE_45_TO_60 & !(signature_group == SIG_HYPER)))$contribution)
+age_60_plus.not_hyper_sig.num <- sum((filter(plot_data, age_group == AGE_60_PLUS & !(signature_group == SIG_HYPER)))$contribution)
+
+# create contingency table for chi-square test
+sam <- array(dim = c(2,3))
+sam[1, ] <- c(age_45_under.hyper_sig.num, age_45_to_60.hyper_sig.num, age_60_plus.hyper_sig.num) # 77, 88, 0
+sam[2, ] <- c(age_45_under.not_hyper_sig.num, age_45_to_60.not_hyper_sig.num, age_60_plus.not_hyper_sig.num) # 2734, 2370, 807
+
+# apply chi-square test to assess if hypermutation signature is linked to EBV status
+pval <- chisq.test(sam)$p.value # 4.230702e-07
+```
+
+## Test association between age groups and the aging signature
+
+```{r}
+age_45_under.aging_sig.num <- sum((filter(plot_data, age_group == AGE_45_UNDER & signature_group == SIG_AGING))$contribution)
+age_45_to_60.aging_sig.num <- sum((filter(plot_data, age_group == AGE_45_TO_60 & signature_group == SIG_AGING))$contribution)
+age_60_plus.aging_sig.num <- sum((filter(plot_data, age_group == AGE_60_PLUS & signature_group == SIG_AGING))$contribution)
+
+age_45_under.not_aging_sig.num <- sum((filter(plot_data, age_group == AGE_45_UNDER & !(signature_group == SIG_AGING)))$contribution)
+age_45_to_60.not_aging_sig.num <- sum((filter(plot_data, age_group == AGE_45_TO_60 & !(signature_group == SIG_AGING)))$contribution)
+age_60_plus.not_aging_sig.num <- sum((filter(plot_data, age_group == AGE_60_PLUS & !(signature_group == SIG_AGING)))$contribution)
+
+# create contingency table for chi-square test
+sam <- array(dim = c(2,3))
+sam[1, ] <- c(age_45_under.aging_sig.num, age_45_to_60.aging_sig.num, age_60_plus.aging_sig.num) # 659, 965, 157
+sam[2, ] <- c(age_45_under.not_aging_sig.num, age_45_to_60.not_aging_sig.num, age_60_plus.not_aging_sig.num) # 2152, 1493, 650
+
+# apply chi-square test to assess if hypermutation signature is linked to EBV status
+pval <- chisq.test(sam)$p.value # 9.696108e-45
+```
+
+
+## #########################################################################
+## Visualizations
+## #########################################################################
 
 ## Boxplot of normalized contributions of AID/APOBEC mutations in EBV+ vs. EBV- patients 
 
@@ -119,39 +457,6 @@ t.test(ebv_pos$total_norm_contrib, ebv_neg$total_norm_contrib)
 #sample estimates:
 # mean of x  mean of y 
 #0.02208149 0.07171671 
-
-```
-
-## Barplot of cosine similarities between original and reconstructed profile - i.e. show how well each mutational profile can be reconstructed with the COSMIC mutational signatures (identical profiles = 1) - e.g. use 0.95 as a cutoff
-
-```{r}
-library(ggplot2)
-
-# first calculate all pairwise cosine similarities
-cos_sim_ori_rec <- cos_sim_matrix(mut_mat, fit_res$reconstructed)
-# extract cosine similarities per sample between original and reconstructed
-cos_sim_ori_rec <- as.data.frame(diag(cos_sim_ori_rec))
-# adjust data frame for plotting with ggplot
-colnames(cos_sim_ori_rec) = "cos_sim"
-cos_sim_ori_rec$sample <- row.names(cos_sim_ori_rec)
-# make barplot
-
-# sort by decreasing similarity
-#cos_sim_ori_rec <- within(cos_sim_ori_rec, sample <- factor(sample, levels=names(sort(cos_sim), decreasing=TRUE)))
-
-pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/28_samples/cosmic_vs_reconstructed-cosine_similarity_barplot.pdf", width = 8, height = 7)
-
-## plot
-ggplot(cos_sim_ori_rec, aes(y=cos_sim, x=reorder(sample, -cos_sim))) + 
-  geom_bar(stat="identity", fill="skyblue4") + 
-  coord_flip(ylim=c(0.7, 1)) +
-  ylab("Cosine similarity\n original VS reconstructed") +
-  xlab("") +
-  theme_bw() +
-  theme(panel.grid.minor.y = element_blank(), panel.grid.major.y = element_blank()) +
-  geom_hline(aes(yintercept=0.80), linetype = "dashed")
-
-dev.off()
 
 ```
 
