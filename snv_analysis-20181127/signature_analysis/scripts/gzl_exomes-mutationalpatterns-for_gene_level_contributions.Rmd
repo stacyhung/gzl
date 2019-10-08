@@ -131,6 +131,9 @@ write.table(contributions, "/Volumes/shung/projects/gzl_exomes/snv_analysis-2018
 # print reconstructed to output
 gene.reconstructed.trinucleotide_profile <- fit_res$reconstructed
 
+# plot contributions of all COSMIC signatures for each gene
+plot_contribution(contributions, cancer_signatures, coord_flip = TRUE, mode = "absolute")
+
 # plot optimal contribution of the COSMIC signatures in each sample as stacked barplot
 # first select signatures with a minimum of X mutations (summed across all samples) contributing to that signature
 select <- which (rowSums(contributions) >= 10)
@@ -178,31 +181,36 @@ p <- ggplot(optimal_contributions.long, aes(as.numeric(contribution))) +
 
 Categories: 
 (1) Aging - #1
-(2) AID/APOBEC activity - #2, 13
-(3) Defective DNA mismatch repair - #3, 6, 15, 20, 26
+(2) *Failure of DSBR via HR - #3
+(3) Defective DNA mismatch repair - #6, 15, (20, 26)
 (4) Polymerase-n-mediated somatic hypermutation - #9
-(5) All other signatures
+(5) *POLE activity - #10
+(6) All other signatures
 
-Patients will be ordered first by EBV group, then by increasing numbers of mutations - all mutations should be captured by the categories listed above.
+*New signatures added not used for the patient-level analysis
+**Previous signatures that have been omitted due to negligable contribution to gene mutations
+#(2) AID/APOBEC activity - #2, 13
 
 ```{r}
 library(ggplot2)
 library(tidyr)
 
-optimal_contributions <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/mutationalPatterns/output/30_samples/GZ-optimal_contributions-COSMIC.txt", sep = "\t", header = TRUE, row.names = 1, stringsAsFactors = FALSE)
+optimal_contributions <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/gene_level_path_groups_3+_mutated/contributions.txt", sep = "\t", header = TRUE, row.names = 1, stringsAsFactors = FALSE)
 
 # create new contribution matrix with just the 5 signature groups
 df <- as.data.frame(t(optimal_contributions))
 
 contributions.group1 <- df$Signature.1
-contributions.group2 <- df$Signature.2 + df$Signature.13
-contributions.group3 <- df$Signature.3 + df$Signature.6 + df$Signature.15 + df$Signature.20 + df$Signature.26
+contributions.group2 <- df$Signature.3
+contributions.group3 <- df$Signature.6 + df$Signature.15 + df$Signature.20 + df$Signature.26
 contributions.group4 <- df$Signature.9
-contributions.group5 <- df$Signature.4 + df$Signature.5 + df$Signature.7 + df$Signature.8 + df$Signature.10 + df$Signature.11 + df$Signature.12 + df$Signature.14 + df$Signature.16 + df$Signature.17 + df$Signature.18 + df$Signature.19 + df$Signature.21 + df$Signature.22 + df$Signature.23 + df$Signature.24 + df$Signature.25 + df$Signature.27 + df$Signature.28 + df$Signature.29 + df$Signature.30
+contributions.group5 <- df$Signature.10
+# all other signatures not captured above
+contributions.group6 <- df$Signature.2 + df$Signature.4 + df$Signature.5 + df$Signature.7 + df$Signature.8 + df$Signature.11 + df$Signature.12 + df$Signature.13 + df$Signature.14 + df$Signature.16 + df$Signature.17 + df$Signature.18 + df$Signature.19 + df$Signature.21 + df$Signature.22 + df$Signature.23 + df$Signature.24 + df$Signature.25 + df$Signature.27 + df$Signature.28 + df$Signature.29 + df$Signature.30
 
-contributions.grouped <- as.data.frame(cbind(row.names(df), contributions.group1, contributions.group2, contributions.group3, contributions.group4, contributions.group5))
+contributions.grouped <- as.data.frame(cbind(row.names(df), contributions.group1, contributions.group2, contributions.group3, contributions.group4, contributions.group5, contributions.group6))
 
-contributions.grouped.without_names <- as.data.frame(cbind(contributions.group1, contributions.group2, contributions.group3, contributions.group4, contributions.group5))
+contributions.grouped.without_names <- as.data.frame(cbind(contributions.group1, contributions.group2, contributions.group3, contributions.group4, contributions.group5, contributions.group6))
 total_mutations.by_group <- colSums(contributions.grouped.without_names)
 
 # to verify that all the signatures have been included
@@ -212,187 +220,72 @@ total_mutations.by_group <- colSums(contributions.grouped.without_names)
 contributions.grouped.long <- gather(contributions.grouped, 
                                      signature_group, 
                                      contribution, 
-                                     contributions.group1:contributions.group5)
-colnames(contributions.grouped.long) <- c("patient", "signature_group", "contribution")
+                                     contributions.group1:contributions.group6)
+colnames(contributions.grouped.long) <- c("gene", "signature_group", "contribution")
 
-write.table(contributions.grouped.long, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/mutationalPatterns/output/30_samples/GZ-optimal_contributions-COSMIC.normalized.grouped.txt", sep = "\t", quote = FALSE)
+write.table(contributions.grouped.long, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/gene_level_path_groups_3+_mutated/contributions-gene_level-normalized.grouped.txt", sep = "\t", quote = FALSE)
 
-plot_data <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/mutationalPatterns/output/30_samples/GZ-optimal_contributions-COSMIC.normalized.grouped.eber_status.txt", sep = "\t", header = TRUE, stringsAsFactors = FALSE)
+plot_data <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/gene_level_path_groups_3+_mutated/contributions-gene_level-normalized.grouped.annotated.with_pathways.txt", sep = "\t", header = TRUE)
 
-# specify order of patients:
-patients.order <- c("GZ-048", "GZ-180", "GZ-178", "GZ-BCC-020", "GZ-116", "GZ-BCC-013", "GZ-BCC-054", "GZ-176", "GZ-046", "GZ-184", "GZ-149", "GZ-044", "GZ-230", "GZ-092", "GZ-152", "GZ-095", "GZ-267", "GZ-086", "GZ-099", "GZ-068", "GZ-222", "GZ-062", "GZ-310", "GZ-197", "GZ-BCC-008", "GZ-235", "GZ-294", "GZ-064", "GZ-301", "GZ-032")
+# specify order of genes (based on pathway groups)
+genes.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/gene_level_path_groups_3+_mutated/genes.ordered.txt", header = TRUE)
+genes.ordered <- genes.ordered$gene
+
 # specify order of signature groups:
-sig_groups.order <- c("Defective DNA mismatch repair (3, 6, 15, 20, 26)",
-                      "AID / APOBEC activity (2, 13)",
-                      "Polymerase-n-mediated somatic hypermutation (9)", 
-                      "Aging (1)",
+sig_groups.order <- c("Aging (1)",
+                      "Defective DNA mismatch repair (6, 15, 20, 26)",
+                      "Failure of DSBR via HR (3)",
+                      "POLE activity (10)",
+                      "Polymerase-n-mediated somatic hypermutation (9)",
                       "All other COSMIC signatures")
 
-p1 <- ggplot(data = plot_data, 
-             aes(factor(x = patient, levels = patients.order), 
-                 y = as.numeric(contribution), 
-                 fill = factor(signature_group, levels = sig_groups.order),
-                 color = EBER_status)) + 
+# barplot (using absolute numbers of mutations)
+p.absolute <- ggplot(data = plot_data, 
+             aes(factor(x = gene, levels = genes.ordered), 
+                     y = as.numeric(contribution), 
+                     fill = factor(signature_group, levels = sig_groups.order), 
+                     color = pathway)) + 
   geom_bar(stat = "identity", width = 0.6) + 
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  scale_fill_manual(name = "Signature Group",
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5, face = "italic")) +
+  scale_color_discrete(name = "Pathway") +
+  scale_fill_manual(name = "Signature group",
                     values = c("Aging (1)" = "rosybrown1",
-                               "AID / APOBEC activity (2, 13)" = "lightgreen", 
-                               "Defective DNA mismatch repair (3, 6, 15, 20, 26)" = "mediumpurple1",
+                               "Defective DNA mismatch repair (6, 15, 20, 26)" = "mediumpurple1",
+                               "Failure of DSBR via HR (3)" = "orange",
+                               "POLE activity (10)" = "lightgreen", 
                                "Polymerase-n-mediated somatic hypermutation (9)" = "dodgerblue", 
                                "All other COSMIC signatures" = "gray")) +
-  scale_colour_manual(name = "EBER status", 
-                      values = c("Negative"="black", "Positive"="red")) +
   xlab("") + 
   ylab("Number of mutations")
   
 # for a very fine outline (use inside geom_bar):
 # size = 0.2
 
-signature_groups.order <- c("All other COSMIC signatures", 
-                            "Aging (1)", 
-                            "Defective DNA mismatch repair (3, 6, 15, 20, 26)",
-                            "AID / APOBEC activity (2, 13)",
-                            "Polymerase-n-mediated somatic hypermutation (9)")
+# Need to calculate relative proportions of mutations 
+library(dplyr)
+# first sum total contributions for each gene
+plot_data <- plot_data %>% 
+  dplyr::group_by(gene) %>% dplyr::mutate(total_contribution = sum(as.numeric(contribution)))
+# calculate relative contribution per gene
+plot_data <- plot_data %>% dplyr::mutate(relative_contribution = contribution / total_contribution)
 
-# barplot showing total number of mutations by signature (and stacked by EBV- vs. EBV+ cases)
-p2 <- ggplot(data = plot_data, 
-             aes(factor(x = signature_group, levels = rev(signature_groups.order)),
-                 y = as.numeric(contribution), 
-                 fill = EBER_status)) + 
+# barplot (relative stacked bars)
+p.relative <- ggplot(data = plot_data, 
+             aes(factor(x = gene, levels = genes.ordered), 
+                     y = as.numeric(relative_contribution), 
+                     fill = factor(signature_group, levels = sig_groups.order), 
+                     color = pathway)) + 
   geom_bar(stat = "identity", width = 0.6) + 
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  scale_fill_manual(name = "EBER status",
-                    values = c("Negative" = "black",
-                               "Positive" = "red")) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5, face = "italic")) +
+  scale_fill_manual(name = "Signature group",
+                    values = c("Aging (1)" = "rosybrown1",
+                               "Defective DNA mismatch repair (6, 15, 20, 26)" = "mediumpurple1",
+                               "Failure of DSBR via HR (3)" = "orange",
+                               "POLE activity (10)" = "lightgreen", 
+                               "Polymerase-n-mediated somatic hypermutation (9)" = "dodgerblue", 
+                               "All other COSMIC signatures" = "gray")) +
+  scale_color_discrete(name = "Pathway") +
   xlab("") + 
-  ylab("Number of mutations") +
-  coord_flip()
-
-```
-
-
-## Calculate enrichment of the AID/APOBEC signature in EBV vs. EBV- groups
-
-```{r}
-library(dplyr)
-
-EBV_pos.AID_sig.data <- filter(plot_data, EBER_status == "Positive" & signature_group == "AID / APOBEC activity (2, 13)")
-EBV_pos.not_AID_sig.data <- filter(plot_data, EBER_status == "Positive" & !(signature_group == "AID / APOBEC activity (2, 13)"))
-EBV_neg.AID_sig.data <- filter(plot_data, EBER_status == "Negative" & signature_group == "AID / APOBEC activity (2, 13)")
-EBV_neg.not_AID_sig.data <- filter(plot_data, EBER_status == "Negative" & !(signature_group == "AID / APOBEC activity (2, 13)"))
-
-EBV_pos.AID_sig.num <- sum(EBV_pos.AID_sig.data$contribution) # 17
-EBV_pos.not_AID_sig.num <- sum(EBV_pos.not_AID_sig.data$contribution) # 633
-EBV_neg.AID_sig.num <- sum(EBV_neg.AID_sig.data$contribution) # 267
-EBV_neg.not_AID_sig.num <- sum(EBV_neg.not_AID_sig.data$contribution) # 5158
-
-EBV_pos.total <- EBV_pos.AID_sig.num + EBV_pos.not_AID_sig.num
-EBV_neg.total <- EBV_neg.AID_sig.num + EBV_neg.not_AID_sig.num
-
-# chi-square test
-sam <- array(dim = c(2,2))
-sam[1, ] <- c(EBV_pos.AID_sig.num, EBV_neg.AID_sig.num)
-sam[2, ] <- c(EBV_pos.total, EBV_neg.total)
+  ylab("Relative contribution")
   
-# Chi-Square test to assess if AID/APOBEC in EBV+ cases is more different than expected
-pvalue <- chisq.test(sam)$p.value # 0.01326989
-
 ```
-
-## Calculate enrichment of defective DNA mismatch repair signature in EBV+ vs. EBV- groups
-
-```{r}
-library(dplyr)
-
-EBV_pos.DDMR_sig.data <- filter(plot_data, EBER_status == "Positive" & signature_group == "Defective DNA mismatch repair (3, 6, 15, 20, 26)")
-EBV_pos.not_DDMR_sig.data <- filter(plot_data, EBER_status == "Positive" & !(signature_group == "Defective DNA mismatch repair (3, 6, 15, 20, 26)"))
-EBV_neg.DDMR_sig.data <- filter(plot_data, EBER_status == "Negative" & signature_group == "Defective DNA mismatch repair (3, 6, 15, 20, 26)")
-EBV_neg.not_DDMR_sig.data <- filter(plot_data, EBER_status == "Negative" & !(signature_group == "Defective DNA mismatch repair (3, 6, 15, 20, 26)"))
-
-EBV_pos.DDMR_sig.num <- sum(EBV_pos.DDMR_sig.data$contribution) # 191.3075
-EBV_pos.not_DDMR_sig.num <- sum(EBV_pos.not_DDMR_sig.data$contribution) # 458.9504
-EBV_neg.DDMR_sig.num <- sum(EBV_neg.DDMR_sig.data$contribution) # 1458.566
-EBV_neg.not_DDMR_sig.num <- sum(EBV_neg.not_DDMR_sig.data$contribution) # 3966.872
-
-EBV_pos.total <- EBV_pos.DDMR_sig.num + EBV_pos.not_DDMR_sig.num
-EBV_neg.total <- EBV_neg.DDMR_sig.num + EBV_neg.not_DDMR_sig.num
-
-# chi-square test
-sam <- array(dim = c(2,2))
-sam[1, ] <- c(EBV_pos.DDMR_sig.num, EBV_neg.DDMR_sig.num)
-sam[2, ] <- c(EBV_pos.total, EBV_neg.total)
-  
-# Chi-Square test to assess if DDMR in EBV+ cases is more different than expected
-pvalue <- chisq.test(sam)$p.value # 0.3233782
-
-
-```
-
-## Boxplot of normalized contributions of AID/APOBEC mutations in EBV+ vs. EBV- patients 
-
-```{r}
-library(ggplot2)
-
-norm.contrib <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/mutationalPatterns/output/30_samples/eber_groups-norm_contrib-AID_APOBEC.txt", sep = "\t", header = TRUE)
-
-p <- ggplot(norm.contrib, aes(x=EBER_status, y=total_norm_contrib)) + 
-  geom_boxplot() +
-  ylab("Normalized contribution of mutations to AID / APOBEC signature") + 
-  xlab("EBER status") +
-  geom_dotplot(binaxis='y', stackdir='center', dotsize=0.7)
-  
-#stat_summary(fun.y=mean, geom="point", shape=23, size=4)
-
-ebv_pos <- filter(norm.contrib, EBER_status == "Positive")
-ebv_neg <- filter(norm.contrib, EBER_status == "Negative")
-
-# t-test to see if the distributions are significantly different
-t.test(ebv_pos$total_norm_contrib, ebv_neg$total_norm_contrib)
-
-#	Welch Two Sample t-test
-#
-#data:  ebv_pos$total_norm_contrib and ebv_neg$total_norm_contrib
-#t = -2.3798, df = 27.617, p-value = 0.02447
-#alternative hypothesis: true difference in means is not equal to 0
-#95 percent confidence interval:
-# -0.092384630 -0.006885817
-#sample estimates:
-# mean of x  mean of y 
-#0.02208149 0.07171671 
-
-```
-
-## Barplot of cosine similarities between original and reconstructed profile - i.e. show how well each mutational profile can be reconstructed with the COSMIC mutational signatures (identical profiles = 1) - e.g. use 0.95 as a cutoff
-
-```{r}
-library(ggplot2)
-
-# first calculate all pairwise cosine similarities
-cos_sim_ori_rec <- cos_sim_matrix(mut_mat, fit_res$reconstructed)
-# extract cosine similarities per sample between original and reconstructed
-cos_sim_ori_rec <- as.data.frame(diag(cos_sim_ori_rec))
-# adjust data frame for plotting with ggplot
-colnames(cos_sim_ori_rec) = "cos_sim"
-cos_sim_ori_rec$sample <- row.names(cos_sim_ori_rec)
-# make barplot
-
-# sort by decreasing similarity
-#cos_sim_ori_rec <- within(cos_sim_ori_rec, sample <- factor(sample, levels=names(sort(cos_sim), decreasing=TRUE)))
-
-pdf("/data/projects/stacy/gzl_exomes/signature_analysis/figures/all_samples/28_samples/cosmic_vs_reconstructed-cosine_similarity_barplot.pdf", width = 8, height = 7)
-
-## plot
-ggplot(cos_sim_ori_rec, aes(y=cos_sim, x=reorder(sample, -cos_sim))) + 
-  geom_bar(stat="identity", fill="skyblue4") + 
-  coord_flip(ylim=c(0.7, 1)) +
-  ylab("Cosine similarity\n original VS reconstructed") +
-  xlab("") +
-  theme_bw() +
-  theme(panel.grid.minor.y = element_blank(), panel.grid.major.y = element_blank()) +
-  geom_hline(aes(yintercept=0.80), linetype = "dashed")
-
-dev.off()
-
-```
-
