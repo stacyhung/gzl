@@ -13,7 +13,11 @@ This script applies the MutationalPatterns package to understand mutational sign
 
 ```{r}
 maf <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs_indels.full_cohort_minus_GZ229.default_and_optimized.incl_silent_and_UTR.for_vcf_conversion.maf", sep = "\t", header = TRUE, fill = TRUE)
+```
 
+
+
+```{r}
 # filter for mutations that are mutated in 3+ cases based on pathology groupings
 genes.mutated_3_plus <- read.table("/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/genes.ordered.CURRENT.mutated_in_3+_cases.txt", sep = "\t", header = TRUE, row.names = 1)
 colnames(genes.mutated_3_plus) <- c("gene")
@@ -187,10 +191,11 @@ p <- ggplot(optimal_contributions.long, aes(as.numeric(contribution))) +
 
 Categories: 
 (1) Aging - #1
-(3) Defective DNA mismatch repair (DDMR) - #3, 6, 15, 20, 26
-(4) *Somatic hypermutation (SHM) - #2, 9, 13
-(5) *POLE activity - #10
-(6) All other signatures
+(2) Defective DNA mismatch repair (DDMR) - #3, 6, 15, 20, 26
+(3) *Somatic hypermutation (SHM) - #2, 9, 13
+(4) *POLE activity - #10
+(5) Other COSMIC signatures with known aetiology
+(6) COSMIC signatures with unknown aetiology
 
 *New signatures added not used for the patient-level analysis
 *AID/APOBEC and Polymerase-n activity were merged into the SHM group
@@ -206,30 +211,26 @@ optimal_contributions <- read.table("/Volumes/shung/projects/gzl_exomes/snv_anal
 # create new contribution matrix with just the 5 signature groups
 df <- as.data.frame(t(optimal_contributions))
 
-#contributions.group1 <- df$Signature.1
 contributions.aging <- df$Signature.1
-#contributions.group2 <- df$Signature.3
-#contributions.group3 <- df$Signature.6 + df$Signature.15 + df$Signature.20 + df$Signature.26
 contributions.DDMR <- df$Signature.3 + df$Signature.6 + df$Signature.15 + df$Signature.20 + df$Signature.26
-#contributions.group4 <- df$Signature.9
 contributions.SHM <- df$Signature.2 + df$Signature.9 + df$Signature.13
-#contributions.group5 <- df$Signature.10
 contributions.POLE <- df$Signature.10
-# all other signatures not captured above
-contributions.OTHER <- df$Signature.4 + df$Signature.5 + df$Signature.7 + df$Signature.8 + df$Signature.11 + df$Signature.12 + df$Signature.14 + df$Signature.16 + df$Signature.17 + df$Signature.18 + df$Signature.19 + df$Signature.21 + df$Signature.22 + df$Signature.23 + df$Signature.24 + df$Signature.25 + df$Signature.27 + df$Signature.28 + df$Signature.29 + df$Signature.30
+# all other signatures not captured above - other and "unknown"
+contributions.other <- df$Signature.4 + df$Signature.7 + df$Signature.11 + df$Signature.22 + df$Signature.24 + df$Signature.29
+contributions.unknown <- df$Signature.5 + df$Signature.8 + df$Signature.12 + df$Signature.14 + df$Signature.16 + df$Signature.17 + df$Signature.18 + df$Signature.19 + df$Signature.21 + df$Signature.23 + df$Signature.25 + df$Signature.27 + df$Signature.28 + df$Signature.30
 
-#contributions.grouped <- as.data.frame(cbind(row.names(df), contributions.group1, contributions.group2, contributions.group3, contributions.group4, contributions.group5, contributions.group6))
-contributions.grouped <- as.data.frame(cbind(row.names(df), contributions.aging, contributions.DDMR, contributions.SHM, contributions.POLE, contributions.OTHER))
+contributions.grouped <- as.data.frame(cbind(row.names(df), contributions.aging, contributions.DDMR, contributions.SHM, contributions.POLE, contributions.other, contributions.unknown))
 
 # convert from wide to long
 contributions.grouped.long <- gather(contributions.grouped, 
                                      signature_group, 
                                      contribution, 
-                                     contributions.aging:contributions.OTHER)
+                                     contributions.aging:contributions.unknown)
 colnames(contributions.grouped.long) <- c("gene", "signature_group", "contribution")
 
 write.table(contributions.grouped.long, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/gene_level_path_groups_3+_mutated/contributions-gene_level-normalized.grouped.txt", sep = "\t", quote = FALSE)
 
+# add pathway annotations and formal signature group names manually in Excel
 plot_data <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/gene_level_path_groups_3+_mutated/contributions-gene_level-normalized.grouped.annotated.with_pathways.txt", sep = "\t", header = TRUE)
 
 # specify order of genes (based on pathway groups)
@@ -241,7 +242,8 @@ sig_groups.order <- c("Aging (1)",
                       "Defective DNA mismatch repair (3, 6, 15, 20, 26)",
                       "POLE activity (10)",
                       "Somatic hypermutation (2, 9, 13)",
-                      "All other COSMIC signatures")
+                      "Other signatures with known aetiology (4, 7, 11, 22, 24, 29)",
+                      "Signatures with unknown aetiology")
 
 # barplot (using absolute numbers of mutations)
 p.absolute <- ggplot(data = plot_data, 
@@ -249,15 +251,16 @@ p.absolute <- ggplot(data = plot_data,
                      y = as.numeric(contribution), 
                      fill = factor(signature_group, levels = sig_groups.order), 
                      color = pathway)) + 
-  geom_bar(stat = "identity", width = 0.6) + 
+  geom_bar(stat = "identity", width = 0.7, size = 0.8) + 
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5, face = "italic")) +
-  scale_color_discrete(name = "Pathway") +
+  scale_color_brewer(name = "Pathway", palette="Set3") +
   scale_fill_manual(name = "Signature group",
                     values = c("Aging (1)" = "rosybrown1",
                                "Defective DNA mismatch repair (3, 6, 15, 20, 26)" = "mediumpurple1",
                                "POLE activity (10)" = "lightgreen", 
                                "Somatic hypermutation (2, 9, 13)" = "dodgerblue", 
-                               "All other COSMIC signatures" = "gray")) +
+                               "Other signatures with known aetiology (4, 7, 11, 22, 24, 29)" = "gray",
+                               "Signatures with unknown aetiology" = "gray48")) +
   xlab("") + 
   ylab("Number of mutations")
   
@@ -278,15 +281,16 @@ p.relative <- ggplot(data = plot_data,
                      y = as.numeric(relative_contribution), 
                      fill = factor(signature_group, levels = sig_groups.order), 
                      color = pathway)) + 
-  geom_bar(stat = "identity", width = 0.6) + 
+  geom_bar(stat = "identity", width = 0.7, size = 0.8) + 
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5, face = "italic")) +
-  scale_color_discrete(name = "Pathway") +
+  scale_color_brewer(name = "Pathway", palette="Set3") +
   scale_fill_manual(name = "Signature group",
                     values = c("Aging (1)" = "rosybrown1",
                                "Defective DNA mismatch repair (3, 6, 15, 20, 26)" = "mediumpurple1",
                                "POLE activity (10)" = "lightgreen", 
                                "Somatic hypermutation (2, 9, 13)" = "dodgerblue", 
-                               "All other COSMIC signatures" = "gray")) +
+                               "Other signatures with known aetiology (4, 7, 11, 22, 24, 29)" = "gray",
+                               "Signatures with unknown aetiology" = "gray48")) +
   xlab("") + 
   ylab("Relative contribution")
   
