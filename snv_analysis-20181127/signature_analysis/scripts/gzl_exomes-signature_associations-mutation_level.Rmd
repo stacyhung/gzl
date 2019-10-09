@@ -21,6 +21,8 @@ Phenotypic groups:
 (3) Age group (<= 45, 45-60, >= 60)
 
 
+Part 2: The extent to which mutations are associated with a given gene and COSMIC signature is also assessed (i.e. mutation in gene X and present in signature Y?)
+
 ## Load data and set variables
 
 ```{r}
@@ -31,6 +33,7 @@ SIG_DDMR = "Defective DNA mismatch repair (3, 6, 15, 20, 26)"
 SIG_HYPER = "Polymerase-n-mediated somatic hypermutation (9)"
 SIG_AGING = "Aging (1)"
 SIG_OTHERS = "All other COSMIC signatures"
+SIG_POLE = ""
 
 EBV_POS = "Positive"
 EBV_NEG = "Negative"
@@ -487,6 +490,85 @@ pval <- chisq.test(sam)$p.value # 7.966147e-15
 
 ```{r}
 write.table(contingency_table, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/mutationalPatterns/output/30_samples/contingency-cosmic_signatures_vs_pheno_groups-mutation_level.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+```
+
+## PART 2 - mutations in a given gene and mutations in a given signature
+
+```{r}
+
+# data with gene-level information on mutations
+plot_data <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/gene_level_path_groups_3+_mutated/contributions-gene_level-normalized.grouped.annotated.with_pathways.txt", sep = "\t", header = TRUE)
+
+signatures <- as.vector(unique(plot_data$signature_group))
+genes <- as.vector(unique(plot_data$gene))
+
+NUM_signatures <- length(signatures)
+NUM_genes <- length(genes)
+
+contingency_table <- array(dim = c(NUM_signatures*2, NUM_genes*2))
+i <- 1
+j <- 1
+
+pval_table <- array(dim = c(NUM_signatures, NUM_genes))
+k <- 1
+l <- 1
+
+# for each gene
+for (gene_name in genes) {
+  
+  # for each signature
+  for (signature_name in signatures){
+    
+    # get values for contingency table
+    num.gene_and_sig <- sum((filter(plot_data, 
+                                    gene == gene_name & signature_group == signature_name))$contribution) 
+    num.not_gene_and_sig <- sum((filter(plot_data, 
+                                    gene != gene_name & signature_group == signature_name))$contribution) 
+    num.gene_and_not_sig <- sum((filter(plot_data, 
+                                    gene == gene_name & signature_group != signature_name))$contribution) 
+    num.not_gene_and_not_sig <- sum((filter(plot_data, 
+                                    gene != gene_name & signature_group != signature_name))$contribution) 
+    
+    # chi-square test
+    sam <- array(dim = c(2,2))
+    sam[1, ] <- c(num.gene_and_sig, num.not_gene_and_sig)
+    sam[2, ] <- c(num.gene_and_not_sig, num.not_gene_and_not_sig)
+    
+    curr_row.start <- i
+    curr_row.end <- i+1
+    curr_col.start <- j
+    curr_col.end <- j+1
+    
+    contingency_table[curr_row.start:curr_row.end, curr_col.start:curr_col.end] <- sam
+    i <- i + 2
+    
+    # Chi-Square test
+    pvalue <- chisq.test(sam)$p.value
+    pval_table[k, l] <- pvalue
+    k <- k + 1
+  }
+  # continue iterating through genes
+  j <- j + 2
+  l <- l + 1
+  # reset signatures
+  i <- 1
+  k <- 1
+}
+  
+colnames(pval_table) <- genes
+row.names(pval_table) <- signatures
+
+not.genes <- paste("Not ", genes, sep = "")
+contingency.col_names <- c(rbind(genes, not.genes))
+not.signatures <- paste("Not ", signatures, sep = "")
+contingency.row_names <- c(rbind(signatures, not.signatures))
+
+colnames(contingency_table) <- contingency.col_names
+row.names(contingency_table) <- contingency.row_names
+
+write.table(contingency_table, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/gene_level_path_groups_3+_mutated/gene_mutations_vs_key_cosmic_signatures-contingency_table.txt", sep = "\t", quote = FALSE)
+
+write.table(pval_table, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/gene_level_path_groups_3+_mutated/chisq-gene_mutations_vs_key_cosmic_signatures.txt", sep = "\t", quote = FALSE)
 ```
 
 ## #########################################################################
