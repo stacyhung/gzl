@@ -1,0 +1,230 @@
+---
+title: "SNV Heatmap"
+author: "Stacy Hung"
+date: "January 28th, 2018"
+output: html_document
+---
+
+This script summarizes the mutational landscape of GZL exomes:
+----
+* Total mutations (incl. 5' and 3' UTRs, and synonymous) + proportions (pie / bar chart?)
+* Breakdown of somatic protein-altering mutations (i.e. remove synonymous mutations)
+* Average / median numbers of mutations (after excl. UTR and synonymous mutations) - with range
+
+## Summary statistics for paired samples
+
+```{r}
+library(plyr)     # revalue
+library(reshape2)  # dcast
+library(dplyr)
+
+calls.all <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs_indels.full_cohort_minus_GZ229.default_and_optimized.incl_silent_and_UTR.for_vcf_conversion.short.maf", sep = "\t", header = TRUE, fill = TRUE)
+
+# classify snvs only (all indels are just indels)
+paired.indels <- filter(calls.all, calls.all$Variant_Type == "INS" | calls.all$Variant_Type == "DEL")
+paired.indels$variant_class <- "small indel"
+
+paired.snvs <- filter(calls.all, calls.all$Variant_Type == "SNP")
+paired.snvs$Variant_Classification <- factor(paired.snvs$Variant_Classification)
+
+# condense effects into a few categories:
+effect.to.var_class <- c(
+                            "Missense_Mutation"="missense",
+                            "Nonstop_Mutation"="missense",
+                            "Splice_Site"="splice site",
+                            "Nonsense_Mutation"="nonsense",
+                            "Silent"="silent",
+                            "3_PRIME_UTR"="3'UTR",
+                            "5_PRIME_UTR"="5'UTR"
+                            )
+paired.snvs$variant_class <- revalue(paired.snvs$Variant_Classification, effect.to.var_class)
+
+# combine snvs + indels again to get a high-level summary of all paired mutations
+paired.all <- rbind(paired.snvs, paired.indels)
+
+# create table outlining numbers of each type mutation across patients
+paired.all.summary <- as.data.frame(table(paired.all$variant_class, paired.all$Tumor_Sample_Barcode))
+colnames(paired.all.summary) <- c("variant_class", "tumor_id", "num_mutations")
+# convert from long to wide (patients are columns, rows are types of mutations)
+paired.all.summary.wide <- dcast(paired.all.summary, variant_class ~ tumor_id, value.var = "num_mutations")
+
+# Total number of protein-altering mutations:
+paired.all.summary.wide$total_paired <- rowSums(paired.all.summary.wide[,2:31])
+
+# Add new category to represent "nonsynonymous mutations": missense + nonsense
+paired.nonsynon <- as.data.frame(t(colSums(paired.all.summary.wide[c(3,4), 2:32])))
+paired.nonsynon <- paired.nonsynon %>%
+    mutate_if(is.factor, as.numeric)
+paired.nonsynon <- as.data.frame(cbind(variant_class = "nonsynonymous", paired.nonsynon))
+paired.nonsynon$total_paired <- rowSums(paired.nonsynon[, 2:32])
+paired.all.summary.wide <- rbind(paired.all.summary.wide, paired.nonsynon)
+
+# add another category - all mutations except for UTR and silent
+paired.somatic <- as.data.frame(t(colSums(paired.all.summary.wide[c(3,4,6,7), 2:31])))
+paired.somatic <- paired.somatic %>%
+    mutate_if(is.factor, as.numeric)
+paired.somatic <- as.data.frame(cbind(variant_class = "protein_altering", paired.somatic))
+paired.somatic$total_paired <- rowSums(paired.somatic[, 2:31])
+paired.all.summary.wide <- rbind(paired.all.summary.wide, paired.somatic)
+
+median.nonsynon <- median(as.numeric(paired.all.summary.wide[8, 2:31]))
+median.somatic <- median(as.numeric(paired.all.summary.wide[9, 2:31]))
+min.somatic <- min(as.numeric(paired.all.summary.wide[9, 2:31]))
+max.somatic <- max(as.numeric(paired.all.summary.wide[9, 2:31]))
+
+write.table(paired.all.summary.wide, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/paired.all.summary_table.incl_silent_and_UTR.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+# -	Total of x potential protein-altering somatic mutations within x genes (x missense mutations, x nonsense mutations, x small indels, x non-exonic [5’ or 3’ UTR]) (or as percentages)
+#-	total somatic SNV/indels per case ranging from x to y
+#-	average of x somatic mutations and y nonsilent mutations per case (range ?)
+#-	high variability in mutation load?
+#-	After removal of UTR mutations; median number of mutations/case
+#-	Of the x mutations observed, x% were located in coding regions, and x% in UTRs
+#-	Amongst the x protein-altering mutations, x were missense, x nonsense, x splice site, and x small indels
+
+```
+
+## Visual summary
+
+```{r}
+library(ggplot2)
+library(RColorBrewer)
+library(dplyr)
+
+# paired cohort - barplot showing # mutations, stacked by protein-altering vs. synonymous
+# Supplementary Figure (legend): Summary of mutations identified by WES in the discovery set. (A) Total mutations and mutation subtypes identified in each tumor. (B) Percentages of different mutation subtypes in all mutations identified in all tumors of the discovery set.
+
+data.df <- as.data.frame(table(paired.all$Tumor_Sample_Barcode, paired.all$variant_class))
+colnames(data.df) <- c("tumor_id", "variant_class", "num_mutations")
+
+# with UTR mutations
+p <- ggplot(data = data.df, aes(x = tumor_id, y = num_mutations, fill = variant_class)) + 
+  geom_bar(stat = "identity", width = 0.6) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_fill_discrete(name = "Variant Class") +
+  xlab("") + ylab("Number of mutations")
+
+# same plot, but without UTR mutations
+mutations.to_drop <- c("3'UTR", "5'UTR", "silent")
+data.df <- subset(data.df, !(data.df$variant_class %in% mutations.to_drop))
+data.df$variant_class <- factor(data.df$variant_class)
+
+p <- ggplot(data = data.df, aes(x = tumor_id, y = num_mutations, fill = variant_class)) + 
+  geom_bar(stat = "identity", width = 0.6) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_fill_discrete(name = "Variant Class") +
+  xlab("") + ylab("Number of mutations")
+
+# with a specific order of variant classes
+p <- data.df %>%
+  mutate(variant_class = factor(variant_class, levels=c("missense", "nonsense", "splice site", "small indel"))) %>%
+  ggplot(aes(x = tumor_id, y = num_mutations, fill = variant_class)) +
+  geom_bar(stat="identity", width = 0.6) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_fill_discrete(name = "Variant Class") +
+  xlab("") + ylab("Number of mutations") + 
+  scale_fill_manual(values=c("#8DD3C7", "#FFFFB3", "#BEBADA", "#FB8072"))
+
+
+# pie chart with all categories:
+data.df <- as.data.frame(table(paired.all$Tumor_Sample_Barcode, paired.all$variant_class))
+colnames(data.df) <- c("tumor_id", "variant_class", "num_mutations")
+
+bp <- data.df %>%
+  mutate(variant_class = factor(variant_class, levels=c("missense", "nonsense", "splice site", "small indel", "3'UTR", "5'UTR", "silent"))) %>%
+  ggplot(aes(x = "", y = num_mutations, fill = variant_class)) +
+  geom_bar(width = 1, stat = "identity")
+
+pie <- bp + coord_polar("y", start = 0) + scale_fill_brewer(palette="Set3") + ylab("") + xlab("")
+
+```
+
+## Get list of recurrently mutated genes for UTR mutations - separate tables for paired and unpaired
+
+```{r}
+## PAIRED dataset
+
+NUM_PAIRED_EXOMES = 30
+
+# load data
+#varscan.paired.calls <- read.table("/Volumes/shung/projects/PMBCL_exomes/snv_indel_analysis/paired/varscan/varsScan.all.paired-snps_and_indels-somatic_and_no_effect_filters.txt", sep = "\t", header = TRUE, fill = TRUE)
+# extract only UTR mutations
+calls.utr <- unique(rbind(
+                calls.all[grep("3_PRIME_UTR", calls.all$Variant_Classification), ],
+                calls.all[grep("5_PRIME_UTR", calls.all$Variant_Classification), ]
+                ))
+calls.utr$Variant_Classification <- factor(calls.utr$Variant_Classification)
+calls.utr$Hugo_Symbol <- factor(calls.utr$Hugo_Symbol)
+
+# get patients mutated by gene and type of UTR mutation
+paired.patient_gene <- unique(calls.utr[,c("Tumor_Sample_Barcode", "Variant_Classification", "Hugo_Symbol")])
+colnames(paired.patient_gene) <- c("tumor_id", "effect", "gene")
+# now get frequency each gene is mutated (i.e. number of patients that has mutation in the gene)
+paired.gene_freq <- as.data.frame(table(paired.patient_gene$gene, paired.patient_gene$effect))
+colnames(paired.gene_freq) <- c("gene", "effect", "num_patients_mutated")
+
+# also get frequencies for UTR mutations in general (not divided by 3' and 5')
+paired.patient_gene.UTR_general <- unique(paired.patient_gene[, c("tumor_id", "gene")])
+paired.gene_freq.UTR_general <- as.data.frame(table(paired.patient_gene.UTR_general$gene))
+colnames(paired.gene_freq.UTR_general) <- c("gene", "num_patients_mutated")
+
+# calculate proportions of genes mutated based on n = 20
+paired.gene_freq$proportion <- paired.gene_freq$num_patients_mutated / NUM_PAIRED_EXOMES * 100
+paired.gene_freq.UTR_general$proportion <- paired.gene_freq.UTR_general$num_patients_mutated / NUM_PAIRED_EXOMES * 100
+
+# reorganize table so that 3'UTR and 5'UTR numbers are side by side
+paired.gene_freq.3_utr <- filter(paired.gene_freq, paired.gene_freq$effect == '3_PRIME_UTR')
+paired.gene_freq.5_utr <- filter(paired.gene_freq, paired.gene_freq$effect == '5_PRIME_UTR')
+
+paired.gene_freq.combined <- paired.gene_freq.UTR_general
+paired.gene_freq.combined$UTR_3_PRIME.num_patients_mutated <- paired.gene_freq.3_utr$num_patients_mutated
+paired.gene_freq.combined$UTR_3_PRIME.proportion <- paired.gene_freq.3_utr$proportion
+paired.gene_freq.combined$UTR_5_PRIME.num_patients_mutated <- paired.gene_freq.5_utr$num_patients_mutated
+paired.gene_freq.combined$UTR_5_PRIME.proportion <- paired.gene_freq.5_utr$proportion
+
+# rename columns
+colnames(paired.gene_freq.combined) <- c("gene", "UTR_3or5_PRIME.num_patients_mutated", "UTR_3or5_PRIME.proportion",
+                                         "UTR_3_PRIME.num_patients_mutated", "UTR_3_PRIME.proportion",
+                                         "UTR_5_PRIME.num_patients_mutated", "UTR_5_PRIME.proportion")
+
+# order genes by proportion of patients mutated
+paired.gene_freq.combined <- paired.gene_freq.combined[rev(order(paired.gene_freq.combined$UTR_3or5_PRIME.proportion)), ]
+# get top 100 most mutated
+paired.top100 <- paired.gene_freq.combined[1:100,]
+
+write.table(paired.top100, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/UTRs/paired-top100_mutated_genes.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+# write out all results
+write.table(paired.gene_freq.combined, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/UTRs/paired-all_UTR_mutated_genes.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+```
+
+## Get list of recurrently mutated genes for all mutations MINUS UTR - combined paired and unpaired
+
+```{r}
+## PAIRED dataset
+
+NUM_PAIRED_EXOMES = 30
+
+# remove UTR mutations
+calls.non_utr <- filter(calls.all, calls.all$Variant_Classification != "3_PRIME_UTR" & 
+                          calls.all$Variant_Classification != "5_PRIME_UTR")
+
+calls.non_utr$Variant_Classification <- factor(calls.non_utr$Variant_Classification)
+calls.non_utr$Hugo_Symbol <- factor(calls.non_utr$Hugo_Symbol)
+
+# get patients mutated by gene
+paired.patient_gene <- unique(calls.non_utr[,c("Tumor_Sample_Barcode", "Hugo_Symbol")])
+colnames(paired.patient_gene) <- c("tumor_id", "gene")
+# now get frequency each gene is mutated (i.e. number of patients that has mutation in the gene)
+paired.gene_freq <- as.data.frame(table(paired.patient_gene$gene))
+colnames(paired.gene_freq) <- c("gene", "num_patients_mutated")
+# calculate proportions of genes mutated based on n = 20
+paired.gene_freq$proportion <- paired.gene_freq$num_patients_mutated / NUM_PAIRED_EXOMES * 100
+# order genes by proportion of patients mutated
+paired.gene_freq <- paired.gene_freq[rev(order(paired.gene_freq$proportion)), ]
+
+write.table(paired.gene_freq, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/tables/pairs.gene_frequencies-no_UTR_mutations.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+```
+
+
