@@ -15,14 +15,17 @@ This script applies the MutationalPatterns package to understand mutational sign
 maf <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs_indels.full_cohort_minus_GZ229.default_and_optimized.incl_silent_and_UTR.for_vcf_conversion.maf", sep = "\t", header = TRUE, fill = TRUE)
 
 # map to case ids
-mappings <- read.table("/Volumes/shung/projects/gzl_exomes/data/GZ_WES_cases-clinical_data.txt", sep = "\t", header = TRUE)
+#mappings <- read.table("/Volumes/shung/projects/gzl_exomes/data/GZ_WES_cases-clinical_data.txt", sep = "\t", header = TRUE)
 # just keep the id columns
-mappings <- mappings[c("Tumor_Sample_Barcode","tumor_id2")]
-maf <- merge(maf, mappings, by = "Tumor_Sample_Barcode")
+#mappings <- mappings[c("Tumor_Sample_Barcode","tumor_id2")]
+#maf <- merge(maf, mappings, by = "Tumor_Sample_Barcode")
 
 # now change the "Tumor_Sample_Barcode" to the desired id
-colnames(maf)[colnames(maf)=="Tumor_Sample_Barcode"] <- "tumor_id"
-colnames(maf)[colnames(maf)=="tumor_id2"] <- "Tumor_Sample_Barcode"
+#colnames(maf)[colnames(maf)=="Tumor_Sample_Barcode"] <- "tumor_id"
+#colnames(maf)[colnames(maf)=="tumor_id2"] <- "Tumor_Sample_Barcode"
+
+# remove indels since they will not be analyzed
+maf <- filter(maf, maf$Variant_Type == "SNP")
 
 # reorder columns
 keeps <- c("Tumor_Sample_Barcode", "Hugo_Symbol", "Variant_Classification", "Variant_Type", "Reference_Allele",   "Chromosome", "Start_Position", "Tumor_Seq_Allele1", "Tumor_Seq_Allele2", "End_Position")
@@ -40,8 +43,9 @@ We are specifically interested in the de novo signatures that are extracted from
 
 ```{r}
 library(dplyr)
+
 # Filter 1: Exclude GZ310 mutations
-# simply avoid reading in VCF data for GZ310
+maf <- filter(maf, maf$Tumor_Sample_Barcode != "GZ-310")
 
 # Filter 2: Exclude all silent mutations
 maf <- filter(maf, maf$Variant_Classification != "Silent")
@@ -49,15 +53,21 @@ maf <- filter(maf, maf$Variant_Classification != "Silent")
 # Filter 3: Exclude GZ310 mutations and all silent mutations
 # use same data as above filter, and additionally remove GZ310 vcf file from input
 
-write.table(maf, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs_indels.full_cohort_minus_GZ229.default_and_optimized.incl_silent_and_UTR.for_vcf_conversion.short.maf", sep = "\t", quote = FALSE, row.names = FALSE)
+write.table(maf, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs_indels.full_cohort_minus_GZ229.default_and_optimized.incl_and_UTR.for_vcf_conversion.short.maf", sep = "\t", quote = FALSE, row.names = FALSE)
+
+MIN_CONTRIBUTION = nrow(maf)*0.03; # "top"-contributing signatures based on contributing to >= 3% of all mutations
+# 217.5 for no filters
+# 190.47 for excluding silent mutations
+# 144.96 for excluding GZ310
+# 130.26 for excluding both GZ310 and silent mutations
 ```
 
 ## Run maf2vcf.pl
 
 #!/bin/bash
 
-perl ~/Downloads/vcf2maf-1.6.17/maf2vcf.pl --input-maf /Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs_indels.full_cohort_minus_GZ229.default_and_optimized.incl_silent_and_UTR.for_vcf_conversion.short.maf \
-        --output-dir /Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/vcf/patient_level/no_filters \
+perl ~/Downloads/vcf2maf-1.6.17/maf2vcf.pl --input-maf /Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs_indels.full_cohort_minus_GZ229.default_and_optimized.incl_and_UTR.for_vcf_conversion.short.maf \
+        --output-dir /Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/vcf/patient_level/excluding_silent_mutations \
         --ref-fasta ~/Downloads/vcf2maf-1.6.17/data/Homo_sapiens.GRCh37.75.dna.primary_assembly.fa \
         --per-tn-vcfs 1 \
         --tum-depth-col t_depth \
@@ -88,11 +98,11 @@ parent_folder <- "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signa
 NO_FILTERS = "/no_filters"                                        # no filters
 EXCL_GZ310 = "/excluding_GZ310"                        # excludes only GZ310
 EXCL_SILENT = "/excluding_silent_mutations"            # excludes only silent mutations
-EXCL_GZ310_AND_SILENT = "/excluding_GZ310_and_silent_mututations" # excludes both GZ310 and silent mututations
+EXCL_GZ310_AND_SILENT = "/excluding_GZ310_and_silent_mutations" # excludes both GZ310 and silent mututations
 
-child_folder <- NO_FILTERS
+#child_folder <- NO_FILTERS
 #child_folder <- EXCL_GZ310
-#child_folder <- EXCL_SILENT
+child_folder <- EXCL_SILENT
 #child_folder <- EXCL_GZ310_AND_SILENT
 vcf_files <- list.files(path = paste(parent_folder, child_folder, sep=""), pattern = "*.vcf", full.names = TRUE, all.files = TRUE)
 
@@ -259,17 +269,18 @@ plot_cosine_heatmap (cos_sim_samples_signatures, cluster_rows = FALSE)
 # fit mutation matrix to the COSMIC mutational signatures
 fit_res <- fit_to_signatures(mut_mat, cancer_signatures)
 # print contributions to output
-write.table(fit_res$contributions, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-default/contributions.txt", sep = "\t", quote = FALSE)
+write.table(fit_res$contribution, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_silent/contributions.txt", sep = "\t", quote = FALSE)
 
 # plot optimal contribution of the COSMIC signatures in each sample as stacked barplot
 # first select signatures with a minimum of X mutations (summed across all samples) contributing to that signature
-select <- which (rowSums(fit_res$contribution) >= 150)
+select <- which (rowSums(fit_res$contribution) >= MIN_CONTRIBUTION)
 # plot contribution barplot
 plot_contribution(fit_res$contribution[select,], cancer_signatures[,select], coord_flip = TRUE, mode = "absolute")
 
 contribs <- as.data.frame.matrix(t(fit_res$contribution[select,]))
 contribs$patient <- row.names(contribs)
-contribs.long <- gather(contribs, signature, contribution, Signature.1:Signature.16)
+contribs.long <- gather(contribs, signature, contribution, Signature.1:Signature.15)
+
 # barplot (using absolute numbers of mutations)
 p.absolute <- ggplot(data = contribs.long, 
              aes(x = patient, y = as.numeric(contribution), 
@@ -301,7 +312,10 @@ p.relative <- ggplot(data = contribs.long,
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
   scale_fill_brewer(name = "Signature", palette="Set3") +
   xlab("") + 
-  ylab("Number of mutations")
+  ylab("Number of mutations") +
+  coord_flip()
+
+
 
 
 
