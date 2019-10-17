@@ -332,10 +332,32 @@ contributions.grouped.long$signature_group <- plyr::revalue(contributions.groupe
                             "contributions.POLE"="POLE activity (10)",
                             "contributions.other"="Other signatures with known aetiology (4, 7, 11, 22, 24, 29)",
                             "contributions.unknown"="Signatures with unknown aetiology"))
-# add EBER status
+
+# add EBER status, mediastinal involvement, path group, and age group
 colnames(contributions.grouped.long) <- c("tumor_id", "signature_group", "contribution")
-contributions.grouped.long <- merge(contributions.grouped.long, metadata[c("tumor_id", "EBV_status")], by = "tumor_id")
+contributions.grouped.long <- merge(contributions.grouped.long, metadata[c("tumor_id", "EBV_status", "mediastinal_involvement", "path_group", "age")], by = "tumor_id")
 plot_data <- contributions.grouped.long
+
+# map path groups to binary values (1/2 or 0/3)
+plot_data <- plot_data %>% mutate(
+     path_group_v2 = case_when(
+         path_group == 1 | path_group == 2 ~ 1,
+         path_group == 0 | path_group == 3 ~ 0
+     )
+)
+
+# map mediastinal involvement to primary vs. non-primary (i.e. combine secondary, not involved)
+plot_data <- plot_data %>% mutate(
+     med_status = case_when(
+         mediastinal_involvement == "Primary"  ~ 1,
+         mediastinal_involvement == "Secondary" | mediastinal_involvement == "Not involved" ~ 0
+     )
+)
+
+# Revalue age "< 45" to "<= 45"
+plot_data$age <- plyr::revalue(plot_data$age, c("< 45"="<= 45"))
+
+plot_data <- as.data.frame(plot_data)
 
 ########################
 ## EBV-specific plots ##
@@ -442,6 +464,426 @@ t.test(as.numeric(ebv_pos$contribution), as.numeric(ebv_neg$contribution))
 #sample estimates:
 #mean of x mean of y 
 # 5.971257 18.417969 
+```
+
+## Association tests (e.g. Are SHM signature mutations differentially distributed by pathology group?)
+
+```{r}
+MED_PRIMARY = 1
+MED_NOT_PRIMARY = 0
+
+PATH_GRP_1_2 = 1
+PATH_GRP_0_3 = 0
+
+AGE_45_UNDER = "<= 45"
+AGE_45_TO_60 = "45 < age < 60"
+AGE_60_PLUS = ">= 60"
+
+signatures <- as.vector(unique(plot_data$signature_group))
+patients <- as.vector(unique(plot_data$tumor_id))
+
+NUM_signatures <- length(signatures)
+NUM_patients <- length(patients)
+
+contingency_table <- array(dim = c(NUM_signatures*2, NUM_patients*2))
+i <- 1
+j <- 1
+
+pval_table <- array(dim = c(NUM_signatures, NUM_patients))
+k <- 1
+l <- 1
+
+# for each gene
+for (patient_id in patients) {
+  
+  # for each signature
+  for (signature_name in signatures){
+    
+    # get values for contingency table
+    num.patient_and_sig <- sum(as.numeric((filter(plot_data, 
+                                    tumor_id == patient_id & signature_group == signature_name))$contribution))
+    num.not_patient_and_sig <- sum(as.numeric((filter(plot_data, 
+                                    tumor_id != patient_id & signature_group == signature_name))$contribution)) 
+    num.patient_and_not_sig <- sum(as.numeric((filter(plot_data, 
+                                    tumor_id == patient_id & signature_group != signature_name))$contribution)) 
+    num.not_patient_and_not_sig <- sum(as.numeric((filter(plot_data, 
+                                    tumor_id != patient_id & signature_group != signature_name))$contribution)) 
+    
+    # chi-square test
+    sam <- array(dim = c(2,2))
+    sam[1, ] <- c(num.patient_and_sig, num.not_patient_and_sig)
+    sam[2, ] <- c(num.patient_and_not_sig, num.not_patient_and_not_sig)
+    
+    curr_row.start <- i
+    curr_row.end <- i+1
+    curr_col.start <- j
+    curr_col.end <- j+1
+    
+    contingency_table[curr_row.start:curr_row.end, curr_col.start:curr_col.end] <- sam
+    i <- i + 2
+    
+    # Chi-Square test
+    pvalue <- chisq.test(sam)$p.value
+    pval_table[k, l] <- pvalue
+    k <- k + 1
+  }
+  # continue iterating through genes
+  j <- j + 2
+  l <- l + 1
+  # reset signatures
+  i <- 1
+  k <- 1
+}
+  
+colnames(pval_table) <- patients
+row.names(pval_table) <- signatures
+
+not.patients <- paste("Not ", patients, sep = "")
+contingency.col_names <- c(rbind(patients, not.patients))
+not.signatures <- paste("Not ", signatures, sep = "")
+contingency.row_names <- c(rbind(signatures, not.signatures))
+
+colnames(contingency_table) <- contingency.col_names
+row.names(contingency_table) <- contingency.row_names
+
+#write.table(contingency_table, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/chisq_tests/patient_mutations_vs_key_cosmic_signatures-contingency_table.txt", sep = "\t", quote = FALSE)
+
+#write.table(pval_table, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/chisq_tests/chisq-patient_mutations_vs_key_cosmic_signatures.txt", sep = "\t", quote = FALSE)
+
+contingency_table.patient_groups <- contingency_table
+pvalue_table.patient_groups <- pval_table
+```
+
+## Associations of signatures with EBV-status
+
+```{r}
+signatures <- as.vector(unique(plot_data$signature_group))
+EBV_stati <- as.vector(unique(plot_data$EBV_status))
+
+NUM_signatures <- length(signatures)
+NUM_EBV_stati <- length(EBV_stati)
+
+contingency_table <- array(dim = c(NUM_signatures*2, NUM_EBV_stati*2))
+i <- 1
+j <- 1
+
+pval_table <- array(dim = c(NUM_signatures, NUM_EBV_stati))
+k <- 1
+l <- 1
+
+# for each gene
+for (EBV_stat in EBV_stati) {
+  
+  # for each signature
+  for (signature_name in signatures){
+    
+    # get values for contingency table
+    num.EBV_stat_and_sig <- sum(as.numeric((filter(plot_data, 
+                                    EBV_status == EBV_stat & signature_group == signature_name))$contribution))
+    num.not_EBV_stat_and_sig <- sum(as.numeric((filter(plot_data, 
+                                    EBV_status != EBV_stat & signature_group == signature_name))$contribution)) 
+    num.EBV_stat_and_not_sig <- sum(as.numeric((filter(plot_data, 
+                                    EBV_status == EBV_stat & signature_group != signature_name))$contribution)) 
+    num.not_EBV_stat_and_not_sig <- sum(as.numeric((filter(plot_data, 
+                                    EBV_status != EBV_stat & signature_group != signature_name))$contribution)) 
+    
+    # chi-square test
+    sam <- array(dim = c(2,2))
+    sam[1, ] <- c(num.EBV_stat_and_sig, num.not_EBV_stat_and_sig)
+    sam[2, ] <- c(num.EBV_stat_and_not_sig, num.not_EBV_stat_and_not_sig)
+    
+    curr_row.start <- i
+    curr_row.end <- i+1
+    curr_col.start <- j
+    curr_col.end <- j+1
+    
+    contingency_table[curr_row.start:curr_row.end, curr_col.start:curr_col.end] <- sam
+    i <- i + 2
+    
+    # Chi-Square test
+    pvalue <- chisq.test(sam)$p.value
+    pval_table[k, l] <- pvalue
+    k <- k + 1
+  }
+  # continue iterating through genes
+  j <- j + 2
+  l <- l + 1
+  # reset signatures
+  i <- 1
+  k <- 1
+}
+  
+colnames(pval_table) <- EBV_stati
+row.names(pval_table) <- signatures
+
+not.EBV_stati <- paste("Not ", EBV_stati, sep = "")
+contingency.col_names <- c(rbind(EBV_stati, not.EBV_stati))
+not.signatures <- paste("Not ", signatures, sep = "")
+contingency.row_names <- c(rbind(signatures, not.signatures))
+
+colnames(contingency_table) <- contingency.col_names
+row.names(contingency_table) <- contingency.row_names
+
+#write.table(contingency_table, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/chisq_tests/EBV_status_vs_key_cosmic_signatures-contingency_table.txt", sep = "\t", quote = FALSE)
+
+#write.table(pval_table, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/chisq_tests/chisq-EBV_status_vs_key_cosmic_signatures.txt", sep = "\t", quote = FALSE)
+
+contingency_table.ebv_groups <- contingency_table
+pvalue_table.ebv_groups <- pval_table
+```
+
+## Associations of signatures with path group
+
+```{r}
+signatures <- as.vector(unique(plot_data$signature_group))
+path_groups <- as.vector(unique(plot_data$path_group_v2))
+
+NUM_signatures <- length(signatures)
+NUM_path_groups <- length(path_groups)
+
+contingency_table <- array(dim = c(NUM_signatures*2, NUM_path_groups*2))
+i <- 1
+j <- 1
+
+pval_table <- array(dim = c(NUM_signatures, NUM_path_groups))
+k <- 1
+l <- 1
+
+# for each gene
+for (path_group in path_groups) {
+  
+  # for each signature
+  for (signature_name in signatures){
+    
+    # get values for contingency table
+    num.path_group_and_sig <- sum(as.numeric((filter(plot_data, 
+                                    path_group_v2 == path_group & signature_group == signature_name))$contribution))
+    num.not_path_group_and_sig <- sum(as.numeric((filter(plot_data, 
+                                    path_group_v2 != path_group & signature_group == signature_name))$contribution)) 
+    num.path_group_and_not_sig <- sum(as.numeric((filter(plot_data, 
+                                    path_group_v2 == path_group & signature_group != signature_name))$contribution)) 
+    num.not_path_group_and_not_sig <- sum(as.numeric((filter(plot_data, 
+                                    path_group_v2 != path_group & signature_group != signature_name))$contribution)) 
+    
+    # chi-square test
+    sam <- array(dim = c(2,2))
+    sam[1, ] <- c(num.path_group_and_sig, num.not_path_group_and_sig)
+    sam[2, ] <- c(num.path_group_and_not_sig, num.not_path_group_and_not_sig)
+    
+    curr_row.start <- i
+    curr_row.end <- i+1
+    curr_col.start <- j
+    curr_col.end <- j+1
+    
+    contingency_table[curr_row.start:curr_row.end, curr_col.start:curr_col.end] <- sam
+    i <- i + 2
+    
+    # Chi-Square test
+    pvalue <- chisq.test(sam)$p.value
+    pval_table[k, l] <- pvalue
+    k <- k + 1
+  }
+  # continue iterating through genes
+  j <- j + 2
+  l <- l + 1
+  # reset signatures
+  i <- 1
+  k <- 1
+}
+  
+colnames(pval_table) <- path_groups
+row.names(pval_table) <- signatures
+
+not.path_groups <- paste("Not ", path_groups, sep = "")
+contingency.col_names <- c(rbind(path_groups, not.path_groups))
+not.signatures <- paste("Not ", signatures, sep = "")
+contingency.row_names <- c(rbind(signatures, not.signatures))
+
+colnames(contingency_table) <- contingency.col_names
+row.names(contingency_table) <- contingency.row_names
+
+#write.table(contingency_table, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/chisq_tests/path_groups_vs_key_cosmic_signatures-contingency_table.txt", sep = "\t", quote = FALSE)
+
+#write.table(pval_table, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/chisq_tests/chisq-path_groups_vs_key_cosmic_signatures.txt", sep = "\t", quote = FALSE)
+
+contingency_table.path_groups <- contingency_table
+pvalue_table.path_groups <- pval_table
+```
+
+## Associations of signatures with mediastinal involvement
+
+```{r}
+signatures <- as.vector(unique(plot_data$signature_group))
+med_groups <- as.vector(unique(plot_data$med_status))
+
+NUM_signatures <- length(signatures)
+NUM_med_groups <- length(med_groups)
+
+contingency_table <- array(dim = c(NUM_signatures*2, NUM_med_groups*2))
+i <- 1
+j <- 1
+
+pval_table <- array(dim = c(NUM_signatures, NUM_med_groups))
+k <- 1
+l <- 1
+
+# for each gene
+for (med_group in med_groups) {
+  
+  # for each signature
+  for (signature_name in signatures){
+    
+    # get values for contingency table
+    num.med_group_and_sig <- sum(as.numeric((filter(plot_data, 
+                                    med_status == med_group & signature_group == signature_name))$contribution))
+    num.not_med_group_and_sig <- sum(as.numeric((filter(plot_data, 
+                                    med_status != med_group & signature_group == signature_name))$contribution)) 
+    num.med_group_and_not_sig <- sum(as.numeric((filter(plot_data, 
+                                    med_status == med_group & signature_group != signature_name))$contribution)) 
+    num.not_med_group_and_not_sig <- sum(as.numeric((filter(plot_data, 
+                                    med_status != med_group & signature_group != signature_name))$contribution)) 
+    
+    # chi-square test
+    sam <- array(dim = c(2,2))
+    sam[1, ] <- c(num.med_group_and_sig, num.not_med_group_and_sig)
+    sam[2, ] <- c(num.med_group_and_not_sig, num.not_med_group_and_not_sig)
+    
+    curr_row.start <- i
+    curr_row.end <- i+1
+    curr_col.start <- j
+    curr_col.end <- j+1
+    
+    contingency_table[curr_row.start:curr_row.end, curr_col.start:curr_col.end] <- sam
+    i <- i + 2
+    
+    # Chi-Square test
+    pvalue <- chisq.test(sam)$p.value
+    pval_table[k, l] <- pvalue
+    k <- k + 1
+  }
+  # continue iterating through genes
+  j <- j + 2
+  l <- l + 1
+  # reset signatures
+  i <- 1
+  k <- 1
+}
+  
+colnames(pval_table) <- path_groups
+row.names(pval_table) <- signatures
+
+not.med_groups <- paste("Not ", med_groups, sep = "")
+contingency.col_names <- c(rbind(med_groups, not.med_groups))
+not.signatures <- paste("Not ", signatures, sep = "")
+contingency.row_names <- c(rbind(signatures, not.signatures))
+
+colnames(contingency_table) <- contingency.col_names
+row.names(contingency_table) <- contingency.row_names
+
+#write.table(contingency_table, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/chisq_tests/med_groups_vs_key_cosmic_signatures-contingency_table.txt", sep = "\t", quote = FALSE)
+
+#write.table(pval_table, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/chisq_tests/chisq-med_groups_vs_key_cosmic_signatures.txt", sep = "\t", quote = FALSE)
+
+contingency_table.med_groups <- contingency_table
+pvalue_table.med_groups <- pval_table
+```
+
+
+## Associations of signatures with age groups
+
+```{r}
+signatures <- as.vector(unique(plot_data$signature_group))
+age_groups <- as.vector(unique(plot_data$age))
+
+NUM_signatures <- length(signatures)
+NUM_age_groups <- length(age_groups)
+
+contingency_table <- array(dim = c(NUM_signatures*2, NUM_age_groups*2))
+i <- 1
+j <- 1
+
+pval_table <- array(dim = c(NUM_signatures, NUM_age_groups))
+k <- 1
+l <- 1
+
+# for each gene
+for (age_group in age_groups) {
+  
+  # for each signature
+  for (signature_name in signatures){
+    
+    # get values for contingency table
+    num.age_group_and_sig <- sum(as.numeric((filter(plot_data, 
+                                    age == age_group & signature_group == signature_name))$contribution))
+    num.not_age_group_and_sig <- sum(as.numeric((filter(plot_data, 
+                                    age != age_group & signature_group == signature_name))$contribution)) 
+    num.age_group_and_not_sig <- sum(as.numeric((filter(plot_data, 
+                                    age == age_group & signature_group != signature_name))$contribution)) 
+    num.not_age_group_and_not_sig <- sum(as.numeric((filter(plot_data, 
+                                    age != age_group & signature_group != signature_name))$contribution)) 
+    
+    # chi-square test
+    sam <- array(dim = c(2,2))
+    sam[1, ] <- c(num.age_group_and_sig, num.not_age_group_and_sig)
+    sam[2, ] <- c(num.age_group_and_not_sig, num.not_age_group_and_not_sig)
+    
+    curr_row.start <- i
+    curr_row.end <- i+1
+    curr_col.start <- j
+    curr_col.end <- j+1
+    
+    contingency_table[curr_row.start:curr_row.end, curr_col.start:curr_col.end] <- sam
+    i <- i + 2
+    
+    # Chi-Square test
+    pvalue <- chisq.test(sam)$p.value
+    pval_table[k, l] <- pvalue
+    k <- k + 1
+  }
+  # continue iterating through genes
+  j <- j + 2
+  l <- l + 1
+  # reset signatures
+  i <- 1
+  k <- 1
+}
+  
+colnames(pval_table) <- age_groups
+row.names(pval_table) <- signatures
+
+not.age_groups <- paste("Not ", age_groups, sep = "")
+contingency.col_names <- c(rbind(age_groups, not.age_groups))
+not.signatures <- paste("Not ", signatures, sep = "")
+contingency.row_names <- c(rbind(signatures, not.signatures))
+
+colnames(contingency_table) <- contingency.col_names
+row.names(contingency_table) <- contingency.row_names
+
+#write.table(contingency_table, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/chisq_tests/age_groups_vs_key_cosmic_signatures-contingency_table.txt", sep = "\t", quote = FALSE)
+
+#write.table(pval_table, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/chisq_tests/chisq-age_groups_vs_key_cosmic_signatures.txt", sep = "\t", quote = FALSE)
+
+contingency_table.age_groups <- contingency_table
+pvalue_table.age_groups <- pval_table
+```
+
+## Combine contingency tables and p-value tables
+
+```{r}
+contingency_table.combined <- cbind(contingency_table.ebv_groups,
+                                    contingency_table.med_groups,
+                                    contingency_table.path_groups,
+                                    contingency_table.age_groups)
+
+pvalue_table.combined <- cbind(pvalue_table.ebv_groups,
+                               pvalue_table.med_groups,
+                               pvalue_table.path_groups,
+                               pvalue_table.age_groups)
+
+write.table(contingency_table.combined, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/chisq_tests/ALL_groups_vs_key_cosmic_signatures-contingency_table.txt", sep = "\t", quote = FALSE)
+
+write.table(pvalue_table.combined, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/chisq_tests/chisq-ALL_groups_vs_key_cosmic_signatures.txt", sep = "\t", quote = FALSE)
+
 ```
 
 ## Calculate enrichment of the AID/APOBEC signature in EBV vs. EBV- groups
