@@ -1,0 +1,471 @@
+---
+title: "MutationalPatterns for GZL exomes"
+author: "Stacy Hung"
+date: "April 19, 2019"
+output: html_document
+---
+
+This script applies the MutationalPatterns package to understand mutational signatures and patterns of base nucleotide substitutions in the GZL exome cohort.
+
+## Preprocessing steps:
+
+## 1. Modify master MAF file to be used to generate VCF files so that tumor names are actually gene names
+
+```{r}
+library(dplyr)
+
+maf <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs_indels.full_cohort_minus_GZ229.default_and_optimized.incl_silent_and_UTR.for_vcf_conversion.maf", sep = "\t", header = TRUE, fill = TRUE)
+
+# reorder columns
+keeps <- c("Tumor_Sample_Barcode", "Hugo_Symbol", "Variant_Classification", "Variant_Type", "Reference_Allele",   "Chromosome", "Start_Position", "Tumor_Seq_Allele1", "Tumor_Seq_Allele2", "End_Position")
+maf <- maf[keeps]
+
+# Exclude GZ310 mutations
+maf <- filter(maf, maf$Tumor_Sample_Barcode != "GZ-310")
+
+# remove indels since they will not be analyzed
+maf <- filter(maf, maf$Variant_Type == "SNP")
+
+MIN_CONTRIBUTION = nrow(maf)*0.03; # "top"-contributing signatures based on contributing to >= 3% of all mutations
+
+write.table(maf, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs.full_cohort_minus_GZ229_and_GZ310.default_and_optimized.incl_silent_and_UTR.for_vcf_conversion.short.maf", sep = "\t", quote = FALSE, row.names = FALSE)
+```
+
+## Run maf2vcf.pl
+
+#!/bin/bash
+
+perl ~/Downloads/vcf2maf-1.6.17/maf2vcf.pl --input-maf /Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs.full_cohort_minus_GZ229_and_GZ310.default_and_optimized.incl_silent_and_UTR.for_vcf_conversion.short.maf \
+        --output-dir /Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/vcf/patient_level/excluding_GZ310_mutations \
+        --ref-fasta ~/Downloads/vcf2maf-1.6.17/data/Homo_sapiens.GRCh37.75.dna.primary_assembly.fa \
+        --per-tn-vcfs 1 \
+        --tum-depth-col t_depth \
+        --tum-rad-col t_ref_depth \
+        --tum-vad-col t_var_depth \
+        --nrm-depth-col n_depth \
+        --nrm-rad-col n_ref_depth \
+        --nrm-vad-col n_var_depth
+
+## Analysis steps using the MutationalPatterns package
+
+## NB: The de novo analysis is very computationally intensive and is not feasible to run on the local computer, so needs to be run on the projects space (numbers). Some of variables will have duplicate values, depending on whether there is an alternative on projects space.
+
+## Load data
+
+```{r}
+library(BSgenome)
+library(BSgenome.Hsapiens.UCSC.hg19)
+library(MutationalPatterns)
+
+ref_genome <- "BSgenome.Hsapiens.UCSC.hg19"
+
+# specify location of VCF files
+vcf_path <- "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/vcf/patient_level/excluding_GZ310"
+
+vcf_files <- list.files(path = vcf_path, pattern = "*.vcf", full.names = TRUE, all.files = TRUE)
+
+# read in sample names and metadata to annotate the VCF files (remove GZ310 - sample id "GZ310T")
+metadata <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/30_samples_final/metadata.txt", sep = "\t", header = TRUE)
+# order sample names by the order in which the VCF files will be in (by patient_id column)
+metadata <- metadata[order(metadata$tumor_id),]
+
+# remove GZ310
+metadata <- filter(metadata, metadata$tumor_id != "GZ-310")
+
+sample_names <- metadata$tumor_id
+
+# load VCF files
+vcf <- read_vcfs_as_granges(vcf_files = vcf_files, sample_names = sample_names, ref_genome)
+```
+
+## Mutational characteristics
+
+## Base substitution types
+
+```{r}
+library(gridExtra)
+
+# retrieve base substitutions from the VCF GRanges object as REF>ALT
+muts <- mutations_from_vcf(vcf[[1]])
+# Convert base substitutions to the 6 types of conventional base types
+types <- mut_type(vcf[[1]])
+# retrieve the sequence context (one base upstream and one base downstream)
+context <- mut_context(vcf[[1]], ref_genome)
+# retrieve the type and context for all positions in the VCF GRanges object
+type_context <- type_context(vcf[[1]], ref_genome)
+# count mutation type occurrences for all VCF objects in the GRangesList
+type_occurrences <- mut_type_occurrences(vcf, ref_genome)
+```
+
+## Mutation Spectrum
+
+```{r}
+# plot the mean relative contribution of each of the 6 base substitution types over all sampels
+p1 <- plot_spectrum(type_occurrences)
+# plot mutation spectrum with distinction between C>T at CpG sites and other sites
+p2 <- plot_spectrum(type_occurrences, CT=TRUE)
+# combine the plots
+grid.arrange(p1, p2)
+
+# facet by sample group - EBV
+p4 <- plot_spectrum(type_occurrences, by = metadata$EBV_status, CT = TRUE, legend = TRUE)
+# facet by sample group - path group
+p5 <- plot_spectrum(type_occurrences, by = metadata$path_group, CT = TRUE, legend = TRUE)
+# facet by sample group - mediastinal involvement
+p6 <- plot_spectrum(type_occurrences, by = metadata$mediastinal_involvement, CT = TRUE, legend = TRUE)
+grid.arrange(p4, p5, p6)
+```
+
+## 96 mutational profile
+
+```{r}
+# generate a 96-trinucleotide mutation count matrix
+mut_mat <- mut_matrix(vcf_list = vcf, ref_genome = ref_genome)
+# plot the 96 profile of all the samples
+#plot_96_profile(mut_mat)
+```
+
+## Mutational signatures
+
+Mutational signatures can be extracted from the mutation count matrix with NMF.  A critical parameter in NMF is the factorization rank, which is the number of mutational signatures.  You can find the optimal factorization rank using the NMF package. The most common approach is to choose the smallest rank for which the cophenetic correlation coefficient starts decreasing.
+
+```{r}
+
+## De novo mutational signature extraction using NMF
+
+# first add a small pseudocount to mutation count matrix
+mut_mat <- mut_mat + 0.0001
+# use the NMF package to generate an estimate rank plot
+estimate <- nmf(mut_mat, rank = 1:10, method = "brunet", nrun = 10, seed = 123456) # doesn't work on Rogue
+# plot the estimates
+plot(estimate)
+
+
+# optimal rank appears to be 2
+# perform a relative large number iterations to achieve stability and avoid local minima
+# recommended number of iterations (runs) is 400-500 based on algorithm paper by Alexandrov et al.
+nmf_res <- extract_signatures(mut_mat, rank = 2, nrun = 10)
+# assign signature names
+colnames(nmf_res$signatures) <- c("GZ Signature A", "GZ Signature B")
+rownames(nmf_res$contribution) <- c("GZ Signature A", "GZ Signature B")
+# print out contributions and signatures to output files
+#write.table(nmf_res$contributions, "/data/projects/stacy/gzl_exomes/signature_analysis/output/28_samples_analysis/denovo-contributions.txt", sep = "\t", quote = FALSE)
+#write.table(nmf_res$signature, "/data/projects/stacy/gzl_exomes/signature_analysis/output/28_samples_analysis/denovo-signatures.txt", sep = "\t", quote = FALSE)
+
+# plot the 96-profile of the signatures
+plot_96_profile(nmf_res$signatures)
+
+# visualize the contribution of the signatures in a barplot
+# order by specific groups of interest (contribution is a 2X28 matrix where 2 = signatures; 28 = samples)
+col.order <- c("GZ-095", "GZ-BCC-020", "GZ-178", "GZ-048", "GZ-180", "GZ-BCC-013", "GZ-116", "GZ-099", "GZ-046", "GZ-BCC-054", "GZ-176", "GZ-184", "GZ-152", "GZ-044", "GZ-149", "GZ-092", "GZ-230", "GZ-086", "GZ-267", "GZ-068", "GZ-062", "GZ-197", "GZ-BCC-008", "GZ-235", "GZ-064", "GZ-294", "GZ-301", "GZ-032")
+nmf_res$contribution <- nmf_res$contribution[, col.order]
+
+# visualize the contribution in absolute number of mutations
+plot_contribution(nmf_res$contribution, nmf_res$signature, mode = "absolute", coord_flip=TRUE)
+# visualize the contribution in relative number of mutations
+plot_contribution(nmf_res$contribution, nmf_res$signature, mode = "relative", coord_flip=TRUE)
+
+
+# Plot signature contribution as a heatmap with sample clustering dendogram and specified signature order:
+plot_contribution_heatmap(nmf_res$contribution, sig_order = c("GZ Signature A", "GZ Signature B"), cluster_samples=FALSE, plot_values=TRUE)
+# calculate the relative contributions
+denovo.contributions <- as.matrix(read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/mutationalPatterns/output/28_samples_analysis/denovo-contributions.txt", sep = "\t", header = TRUE))
+# transpose
+denovo.contributions <- t(denovo.contributions)
+# relative contribution
+denovo.contrib.norm <- denovo.contributions / rowSums(denovo.contributions)
+#write.table(denovo.contrib.norm, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/mutationalPatterns/output/28_samples_analysis/denovo-contributions.norm.txt", sep = "\t", quote = FALSE)
+
+# compare reconstructed mutational profile with original mutational profile
+plot_compare_profiles(mut_mat[,1], nmf_res$reconstructed[,1], profile_names = c("Original", "Reconstructed"), condensed = TRUE)
+```
+
+
+## COSMIC mutational signatures
+
+```{r}
+# Download mutational signatures from the COSMIC website (saved local directory to avoid connection issues)
+sp_url <- paste("https://cancer.sanger.ac.uk/cancergenome/assets/", "signatures_probabilities.txt", sep = "")
+cancer_signatures = read.table(sp_url, sep = "\t", header = TRUE)
+
+# Match the order of the mutation types to MutationalPatterns standard
+new_order = match(row.names(mut_mat), cancer_signatures$Somatic.Mutation.Type)
+
+# Reorder cancer signatures dataframe
+cancer_signatures = cancer_signatures[as.vector(new_order),]
+
+# Add trinucletiode changes names as row.names
+row.names(cancer_signatures) = cancer_signatures$Somatic.Mutation.Type
+
+# Keep only 96 contributions of the 30 signatures in matrix
+cancer_signatures = as.matrix(cancer_signatures[,4:33])
+```
+
+## Similarity between de novo signatures and COSMIC signatures
+
+```{r}
+# calculate pairwise cosine similarity between mutational profiles and COSMIC signatures
+cos_sim_denovo_signatures <- cos_sim_matrix(nmf_res$signatures, cancer_signatures)
+
+# plot heatmap of cosine similarities
+plot_cosine_heatmap(cos_sim_denovo_signatures, col_order = cosmic_order, cluster_rows = FALSE, plot_values=TRUE)
+
+## plot signature contribution as heatmap
+pheatmap1 <- plot_contribution_heatmap(nmf_res$contribution, cluster_samples=FALSE)
+```
+
+## Similarity between mutational profiles and COSMIC signatures
+
+```{r}
+# calculate pairwise cosine similarity between mutational profiles and COSMIC signatures
+cos_sim_samples_signatures <- cos_sim_matrix(mut_mat, cancer_signatures)
+# plot heatmap with specific signature order
+plot_cosine_heatmap (cos_sim_samples_signatures, cluster_rows = FALSE)
+
+# Find optimal contribution of COSMIC signatures to reconstruct 96 mutational profiles
+
+# fit mutation matrix to the COSMIC mutational signatures
+fit_res <- fit_to_signatures(mut_mat, cancer_signatures)
+# print contributions to output
+write.table(fit_res$contribution, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/contributions.txt", sep = "\t", quote = FALSE)
+```
+
+## Summary plots of top contributing signatures
+
+```{r}
+# plot optimal contribution of the COSMIC signatures in each sample as stacked barplot
+# first select signatures with a minimum of X mutations (summed across all samples) contributing to that signature
+select <- which (rowSums(fit_res$contribution) >= MIN_CONTRIBUTION)
+# plot contribution barplot
+plot_contribution(fit_res$contribution[select,], cancer_signatures[,select], coord_flip = TRUE, mode = "absolute")
+
+contribs <- as.data.frame.matrix(t(fit_res$contribution[select,]))
+contribs$patient <- row.names(contribs)
+contribs.long <- gather(contribs, signature, contribution, Signature.1:Signature.15)
+
+# barplot (using absolute numbers of mutations)
+p.absolute <- ggplot(data = contribs.long, 
+             aes(x = patient, y = as.numeric(contribution), 
+                     fill = signature)) + 
+  geom_bar(stat = "identity", width = 0.7, size = 0.8) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_fill_brewer(name = "Signature", palette="Set3") +
+  xlab("") + 
+  ylab("Number of mutations")
+
+
+# and the same plot, but for relative contributions
+plot_contribution(fit_res$contribution[select,], cancer_signatures[,select], coord_flip = TRUE, mode = "relative")
+
+# and the customized version:
+
+# Calculate relative proportions of mutations 
+
+# first sum total contributions for each gene
+contribs.long <- contribs.long %>% 
+  dplyr::group_by(patient) %>% dplyr::mutate(total_contribution = sum(as.numeric(contribution)))
+# calculate relative contribution per gene
+contribs.long <- contribs.long %>% dplyr::mutate(relative_contribution = contribution / total_contribution)
+# customized relative plot
+p.relative <- ggplot(data = contribs.long, 
+             aes(x = patient, y = as.numeric(relative_contribution), 
+                     fill = signature)) + 
+  geom_bar(stat = "identity", width = 0.7, size = 0.8) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_fill_brewer(name = "Signature", palette="Set3") +
+  xlab("") + 
+  ylab("Number of mutations") +
+  coord_flip()
+```
+
+## Create new contribution matrix based on grouping of key signatures
+
+Categories: 
+(1) Aging - #1
+(2) Defective DNA mismatch repair (DDMR) - #3, 6, 15, 20, 26
+(3) *Somatic hypermutation (SHM) - #2, 9, 13
+(4) *POLE activity - #10
+(5) Other COSMIC signatures with known aetiology (4, 7, 11, 22, 24, 29)
+(6) COSMIC signatures with unknown aetiology
+
+*New signatures added not used for the patient-level analysis
+*AID/APOBEC and Polymerase-n activity were merged into the SHM group
+**Previous signatures that have been omitted due to negligable contribution to gene mutations
+
+```{r}
+library(ggplot2)
+library(tidyr)
+library(plyr)
+library(dplyr)
+
+optimal_contributions <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/contributions.txt", sep = "\t", header = TRUE, row.names = 1, stringsAsFactors = FALSE)
+
+# create new contribution matrix with just the 5 signature groups
+df <- as.data.frame(t(optimal_contributions))
+
+contributions.aging <- df$Signature.1
+contributions.DDMR <- df$Signature.3 + df$Signature.6 + df$Signature.15 + df$Signature.20 + df$Signature.26
+contributions.SHM <- df$Signature.2 + df$Signature.9 + df$Signature.13
+contributions.POLE <- df$Signature.10
+# all other signatures not captured above - other and "unknown"
+contributions.other <- df$Signature.4 + df$Signature.7 + df$Signature.11 + df$Signature.22 + df$Signature.24 + df$Signature.29
+contributions.unknown <- df$Signature.5 + df$Signature.8 + df$Signature.12 + df$Signature.14 + df$Signature.16 + df$Signature.17 + df$Signature.18 + df$Signature.19 + df$Signature.21 + df$Signature.23 + df$Signature.25 + df$Signature.27 + df$Signature.28 + df$Signature.30
+
+contributions.grouped <- as.data.frame(cbind(row.names(df), contributions.aging, contributions.DDMR, contributions.SHM, contributions.POLE, contributions.other, contributions.unknown))
+
+# convert from wide to long
+contributions.grouped.long <- gather(contributions.grouped, 
+                                     signature_group, 
+                                     contribution, 
+                                     contributions.aging:contributions.unknown)
+colnames(contributions.grouped.long) <- c("patient", "signature_group", "contribution")
+
+write.table(contributions.grouped.long, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/contributions-patient-level-normalized.grouped.txt", sep = "\t", quote = FALSE)
+
+# Update ids so they contain dashes
+contributions.grouped.long$patient <- gsub("\\.", "-", contributions.grouped.long$patient)
+# Update signature group names
+contributions.grouped.long$signature_group <- plyr::revalue(contributions.grouped.long$signature_group, 
+                            c("contributions.aging"="Aging (1)", 
+                            "contributions.DDMR"="Defective DNA mismatch repair (3, 6, 15, 20, 26)",
+                            "contributions.SHM"="Somatic hypermutation (2, 9, 13)",
+                            "contributions.POLE"="POLE activity (10)",
+                            "contributions.other"="Other signatures with known aetiology (4, 7, 11, 22, 24, 29)",
+                            "contributions.unknown"="Signatures with unknown aetiology"))
+# add EBER status
+colnames(contributions.grouped.long) <- c("tumor_id", "signature_group", "contribution")
+contributions.grouped.long <- merge(contributions.grouped.long, metadata[c("tumor_id", "EBV_status")], by = "tumor_id")
+plot_data <- contributions.grouped.long
+
+########################
+## EBV-specific plots ##
+########################
+
+# order patients by EBV status then by increasing numbers of mutations (need to group by patient)
+# first sum total contributions for each patient
+plot_data <- plot_data %>% 
+  dplyr::group_by(tumor_id) %>% dplyr::mutate(total_contribution = sum(as.numeric(contribution)))
+# calculate relative contribution per gene (useful for a relative contribution plot)
+plot_data <- as.data.frame(plot_data %>% dplyr::mutate(relative_contribution = as.numeric(contribution) / total_contribution))
+# now order first by EBV status, and then by decreasing total contribution by patient
+plot_data <- plot_data[with(plot_data, order(as.character(EBV_status), -total_contribution)), ]
+
+# specify order of patients (based on our sorting)
+plot_data$tumor_id <- factor(plot_data$tumor_id)
+tumors.ordered <- unique(plot_data$tumor_id)
+
+# specify order of signature groups:
+sig_groups.order <- c("Aging (1)",
+                      "Defective DNA mismatch repair (3, 6, 15, 20, 26)",
+                      "POLE activity (10)",
+                      "Somatic hypermutation (2, 9, 13)",
+                      "Other signatures with known aetiology (4, 7, 11, 22, 24, 29)",
+                      "Signatures with unknown aetiology")
+
+# barplot (using absolute numbers of mutations)
+p.absolute <- ggplot(data = plot_data, 
+             aes(factor(x = tumor_id, levels = tumors.ordered), 
+                     y = as.numeric(contribution), 
+                     fill = factor(signature_group, levels = sig_groups.order), 
+                     color = EBV_status)) + 
+  geom_bar(stat = "identity", width = 0.7, size = 0.8) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  scale_colour_manual(name = "EBER status", 
+                      values = c("Negative"="black", "Positive"="red")) +
+  scale_fill_manual(name = "Signature group",
+                    values = c("Aging (1)" = "rosybrown1",
+                               "Defective DNA mismatch repair (3, 6, 15, 20, 26)" = "mediumpurple1",
+                               "POLE activity (10)" = "lightgreen", 
+                               "Somatic hypermutation (2, 9, 13)" = "dodgerblue", 
+                               "Other signatures with known aetiology (4, 7, 11, 22, 24, 29)" = "gray",
+                               "Signatures with unknown aetiology" = "gray48")) +
+  xlab("") + 
+  ylab("Number of mutations")
+  
+
+# now a slightly different plot, showing contributions by signature group (instead of patient), and encoded with EBER
+
+# specify order of signature groups:
+sig_groups.order <- c("Defective DNA mismatch repair (3, 6, 15, 20, 26)",
+                      "Aging (1)",
+                      "Signatures with unknown aetiology",
+                      "Other signatures with known aetiology (4, 7, 11, 22, 24, 29)",
+                      "Somatic hypermutation (2, 9, 13)",
+                      "POLE activity (10)"
+                      )
+
+# barplot (using absolute numbers of mutations)
+p.signatures <- ggplot(data = plot_data, 
+             aes(factor(x = signature_group, levels = sig_groups.order), 
+                     y = as.numeric(contribution), 
+                     fill = EBV_status)) + 
+  geom_bar(stat = "identity", width = 0.7, size = 0.8) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  scale_fill_manual(name = "EBER status", 
+                      values = c("Negative"="black", "Positive"="red")) +
+  xlab("") + 
+  ylab("Number of mutations") + 
+  theme(legend.position="bottom") +
+  scale_x_discrete(labels=c("Defective DNA mismatch repair (3, 6, 15, 20, 26)" = "DDMR", 
+                            "Aging (1)" = "Aging",
+                            "Signatures with unknown aetiology" = "Unknown",
+                            "Other signatures with known aetiology (4, 7, 11, 22, 24, 29)" = "Other",
+                            "Somatic hypermutation (2, 9, 13)" = "SHM",
+                            "POLE activity (10)" = "POLE")) + 
+  coord_flip()
+
+# plot contributions by EBV status
+
+plot_data.SHM <- filter(plot_data, plot_data$signature_group == "Somatic hypermutation (2, 9, 13)")
+
+p.SHM <- ggplot(plot_data.SHM, aes(x=EBV_status, y=as.numeric(contribution) )) + 
+  geom_boxplot() +
+  ylab("Contribution of mutations to SHM signature") + 
+  xlab("EBER status") +
+  geom_dotplot(binaxis='y', stackdir='center', dotsize=0.7)
+  
+#stat_summary(fun.y=mean, geom="point", shape=23, size=4)
+
+ebv_pos <- filter(plot_data.SHM, EBV_status == "Positive")
+ebv_neg <- filter(plot_data.SHM, EBV_status == "Negative")
+
+# t-test to see if the distributions are significantly different
+t.test(as.numeric(ebv_pos$contribution), as.numeric(ebv_neg$contribution))
+
+#	Welch Two Sample t-test
+
+#data:  as.numeric(ebv_pos$contribution) and as.numeric(ebv_neg$contribution)
+#t = -1.9198, df = 24.934, p-value = 0.06639
+#alternative hypothesis: true difference in means is not equal to 0
+#95 percent confidence interval:
+# -25.8010955   0.9076723
+#sample estimates:
+#mean of x mean of y 
+# 5.971257 18.417969 
+```
+
+## Calculate enrichment of the AID/APOBEC signature in EBV vs. EBV- groups
+
+```{r}
+library(dplyr)
+
+EBV_pos.AID_sig.data <- filter(plot_data, EBV_status == "Positive" & signature_group == "Somatic hypermutation (2, 9, 13)")
+EBV_pos.not_AID_sig.data <- filter(plot_data, EBV_status == "Positive" & !(signature_group == "Somatic hypermutation (2, 9, 13)"))
+EBV_neg.AID_sig.data <- filter(plot_data, EBV_status == "Negative" & signature_group == "Somatic hypermutation (2, 9, 13)")
+EBV_neg.not_AID_sig.data <- filter(plot_data, EBV_status == "Negative" & !(signature_group == "Somatic hypermutation (2, 9, 13)"))
+
+EBV_pos.AID_sig.num <- sum(as.numeric(EBV_pos.AID_sig.data$contribution)) # 42
+EBV_pos.not_AID_sig.num <- sum(as.numeric(EBV_pos.not_AID_sig.data$contribution)) # 608
+EBV_neg.AID_sig.num <- sum(as.numeric(EBV_neg.AID_sig.data$contribution)) # 405
+EBV_neg.not_AID_sig.num <- sum(as.numeric(EBV_neg.not_AID_sig.data$contribution)) # 3392
+
+# chi-square test
+sam <- array(dim = c(2,2))
+sam[1, ] <- c(EBV_pos.AID_sig.num, EBV_neg.AID_sig.num)
+sam[2, ] <- c(EBV_pos.not_AID_sig.num, EBV_neg.not_AID_sig.num)
+  
+# Chi-Square test to assess if AID/APOBEC in EBV+ cases is more different than expected
+pvalue <- chisq.test(sam)$p.value # 0.001134251
+
+```
+
