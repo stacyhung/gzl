@@ -355,8 +355,13 @@ plot_data <- plot_data %>% mutate(
      )
 )
 
-# Revalue age "< 45" to "<= 45"
-plot_data$age <- plyr::revalue(plot_data$age, c("< 45"="<= 45"))
+# combine "45 < age < 60" and "age <= 60"
+plot_data <- plot_data %>% mutate(
+     age_group = case_when(
+         age == "< 45" ~ "<= 45",
+         age == "45 < age < 60" | age == ">= 60" ~ "> 45"
+     )
+)
 
 plot_data <- as.data.frame(plot_data)
 
@@ -564,70 +569,54 @@ EBV_stati <- as.vector(unique(plot_data$EBV_status))
 NUM_signatures <- length(signatures)
 NUM_EBV_stati <- length(EBV_stati)
 
-contingency_table <- array(dim = c(NUM_signatures*2, NUM_EBV_stati*2))
+contingency_table <- array(dim = c(NUM_signatures*2, NUM_EBV_stati))
 i <- 1
-j <- 1
 
-pval_table <- array(dim = c(NUM_signatures, NUM_EBV_stati))
+pval_table <- array(dim = c(NUM_signatures, 1))
 k <- 1
-l <- 1
 
-# for each gene
-for (EBV_stat in EBV_stati) {
-  
-  # for each signature
-  for (signature_name in signatures){
+# for each signature
+for (signature_name in signatures){
     
     # get values for contingency table
-    num.EBV_stat_and_sig <- sum(as.numeric((filter(plot_data, 
-                                    EBV_status == EBV_stat & signature_group == signature_name))$contribution))
-    num.not_EBV_stat_and_sig <- sum(as.numeric((filter(plot_data, 
-                                    EBV_status != EBV_stat & signature_group == signature_name))$contribution)) 
-    num.EBV_stat_and_not_sig <- sum(as.numeric((filter(plot_data, 
-                                    EBV_status == EBV_stat & signature_group != signature_name))$contribution)) 
-    num.not_EBV_stat_and_not_sig <- sum(as.numeric((filter(plot_data, 
-                                    EBV_status != EBV_stat & signature_group != signature_name))$contribution)) 
+    num.EBV_pos_and_sig <- sum(as.numeric((filter(plot_data, 
+                                    EBV_status == "Positive" & signature_group == signature_name))$contribution))
+    num.EBV_pos_and_not_sig <- sum(as.numeric((filter(plot_data, 
+                                    EBV_status == "Positive" & signature_group != signature_name))$contribution)) 
+    num.EBV_neg_and_sig <- sum(as.numeric((filter(plot_data, 
+                                    EBV_status == "Negative" & signature_group == signature_name))$contribution)) 
+    num.EBV_neg_and_not_sig <- sum(as.numeric((filter(plot_data, 
+                                    EBV_status == "Negative" & signature_group != signature_name))$contribution)) 
     
     # chi-square test
     sam <- array(dim = c(2,2))
-    sam[1, ] <- c(num.EBV_stat_and_sig, num.not_EBV_stat_and_sig)
-    sam[2, ] <- c(num.EBV_stat_and_not_sig, num.not_EBV_stat_and_not_sig)
+    sam[1, ] <- c(num.EBV_pos_and_sig, num.EBV_neg_and_sig)
+    sam[2, ] <- c(num.EBV_pos_and_not_sig, num.EBV_neg_and_not_sig)
     
     curr_row.start <- i
     curr_row.end <- i+1
-    curr_col.start <- j
-    curr_col.end <- j+1
-    
-    contingency_table[curr_row.start:curr_row.end, curr_col.start:curr_col.end] <- sam
+
+    contingency_table[curr_row.start:curr_row.end, 1:2] <- sam
     i <- i + 2
     
     # Chi-Square test
     pvalue <- chisq.test(sam)$p.value
-    pval_table[k, l] <- pvalue
+    pval_table[k, 1] <- pvalue
     k <- k + 1
-  }
-  # continue iterating through genes
-  j <- j + 2
-  l <- l + 1
-  # reset signatures
-  i <- 1
-  k <- 1
 }
   
-colnames(pval_table) <- EBV_stati
+colnames(pval_table) <- c("EBV_status")
 row.names(pval_table) <- signatures
 
-not.EBV_stati <- paste("Not ", EBV_stati, sep = "")
-contingency.col_names <- c(rbind(EBV_stati, not.EBV_stati))
 not.signatures <- paste("Not ", signatures, sep = "")
 contingency.row_names <- c(rbind(signatures, not.signatures))
 
-colnames(contingency_table) <- contingency.col_names
+colnames(contingency_table) <- EBV_stati
 row.names(contingency_table) <- contingency.row_names
 
-#write.table(contingency_table, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/chisq_tests/EBV_status_vs_key_cosmic_signatures-contingency_table.txt", sep = "\t", quote = FALSE)
+write.table(contingency_table, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/chisq_tests/EBV_status_vs_key_cosmic_signatures-contingency_table.txt", sep = "\t", quote = FALSE)
 
-#write.table(pval_table, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/chisq_tests/chisq-EBV_status_vs_key_cosmic_signatures.txt", sep = "\t", quote = FALSE)
+write.table(pval_table, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/chisq_tests/chisq-EBV_status_vs_key_cosmic_signatures.txt", sep = "\t", quote = FALSE)
 
 contingency_table.ebv_groups <- contingency_table
 pvalue_table.ebv_groups <- pval_table
@@ -780,7 +769,7 @@ pvalue_table.med_groups <- pval_table
 
 ```{r}
 signatures <- as.vector(unique(plot_data$signature_group))
-age_groups <- as.vector(unique(plot_data$age))
+age_groups <- as.vector(unique(plot_data$age_group))
 
 NUM_signatures <- length(signatures)
 NUM_age_groups <- length(age_groups)
@@ -796,27 +785,23 @@ for (signature_name in signatures){
     
     # get values for contingency table
     num.under_45_and_sig <- sum(as.numeric((filter(plot_data, 
-                                    age == "<= 45" & signature_group == signature_name))$contribution))
+                                    age_group == "<= 45" & signature_group == signature_name))$contribution))
     num.under_45_and_no_sig <- sum(as.numeric((filter(plot_data, 
-                                    age == "<= 45" & signature_group != signature_name))$contribution)) 
-    num.45_to_60_and_sig <- sum(as.numeric((filter(plot_data, 
-                                    age == "45 < age < 60" & signature_group == signature_name))$contribution)) 
-    num.45_to_60_and_not_sig <- sum(as.numeric((filter(plot_data, 
-                                    age == "45 < age < 60" & signature_group != signature_name))$contribution)) 
-    num.over_60_and_sig <- sum(as.numeric((filter(plot_data, 
-                                    age == ">= 60" & signature_group == signature_name))$contribution))
-    num.over_60_and_not_sig <- sum(as.numeric((filter(plot_data, 
-                                    age == ">= 60" & signature_group != signature_name))$contribution)) 
-    
+                                    age_group == "<= 45" & signature_group != signature_name))$contribution)) 
+    num.over_45_and_sig <- sum(as.numeric((filter(plot_data, 
+                                    age_group == "> 45" & signature_group == signature_name))$contribution)) 
+    num.over_45_and_not_sig <- sum(as.numeric((filter(plot_data, 
+                                    age_group == "> 45" & signature_group != signature_name))$contribution)) 
+
     # chi-square test
-    sam <- array(dim = c(2,3))
-    sam[1, ] <- c(num.under_45_and_sig, num.45_to_60_and_sig, num.over_60_and_sig)
-    sam[2, ] <- c(num.under_45_and_no_sig, num.45_to_60_and_not_sig, num.over_60_and_not_sig)
+    sam <- array(dim = c(2,2))
+    sam[1, ] <- c(num.under_45_and_sig, num.over_45_and_sig)
+    sam[2, ] <- c(num.under_45_and_no_sig, num.over_45_and_not_sig)
     
     curr_row.start <- i
     curr_row.end <- i+1
 
-    contingency_table[curr_row.start:curr_row.end, 1:3] <- sam
+    contingency_table[curr_row.start:curr_row.end, 1:2] <- sam
     i <- i + 2
     
     # Chi-Square test
@@ -860,6 +845,20 @@ write.table(contingency_table.combined, "/Volumes/shung/projects/gzl_exomes/snv_
 write.table(pvalue_table.combined, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/chisq_tests/chisq-ALL_groups_vs_key_cosmic_signatures.txt", sep = "\t", quote = FALSE)
 
 ```
+
+## Create plot to visualize data from contingency table
+
+Idea: double-sided rotated bar plot (akin to a forest plot) showing proportions of each category - each row would be a signature, and each side of the bar plot would represent a different category (e.g. left = EBV-, right = EBV+)
+
+## ###################
+## EBV vs. signatures
+## ###################
+
+```{r}
+
+
+```
+
 
 ## Calculate enrichment of the AID/APOBEC signature in EBV vs. EBV- groups
 
