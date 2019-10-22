@@ -848,15 +848,66 @@ write.table(pvalue_table.combined, "/Volumes/shung/projects/gzl_exomes/snv_analy
 
 ## Create plot to visualize data from contingency table
 
-Idea: double-sided rotated bar plot (akin to a forest plot) showing proportions of each category - each row would be a signature, and each side of the bar plot would represent a different category (e.g. left = EBV-, right = EBV+)
+Idea: Two-sided rotated bar plot (akin to a forest plot) showing proportions of each category - each row would be a signature, and each side of the bar plot would represent a different category (e.g. left = EBV-, right = EBV+)
 
 ## ###################
 ## EBV vs. signatures
 ## ###################
 
 ```{r}
+library(dplyr)
+library(gridExtra)
+library(rstatix)
+
+plot_data <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/chisq_tests/proportions_from_contigency-ALL_clinical_groups-vs-signatures.v3.txt", sep = "\t", header = TRUE)
+
+# read in p-values from chi-square tests
+pvalues <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/clinical_groups-chi_square-pvalues.v3.txt", sep = "\t", header = TRUE)
+
+# convert p-values from wide to long
+#pvalues.long <- gather(pvalues, feature_name, p.signif, EBV.status:Age)
+#pvalues.long$feature_name <- plyr::revalue(pvalues.long$feature_name, 
+#                            c("EBV.status" = "EBV status", 
+#                            "Mediastinal.involvement" = "Mediastinal involvement"))
+#write.table(pvalues.long, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/clinical_groups-chi_square-pvalues.long.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+plot_data$signature_group <- plyr::revalue(plot_data$signature_group, 
+                            c("Aging (1)" = "Aging", 
+                            "Defective DNA mismatch repair (3, 6, 15, 20, 26)" = "DDMR",
+                            "Somatic hypermutation (2, 9, 13)" = "SHM",
+                            "POLE activity (10)" = "POLE",
+                            "Other signatures with known aetiology (4, 7, 11, 22, 24, 29)" = "Other",
+                            "Signatures with unknown aetiology" = "Unknown"))
+
+# specify order of categories
+feature_categories.order = c("<= 45", "> 45", 
+                             "EBV-", "EBV+",
+                             "Non-primary", "Primary",
+                             "Group 0 or 3", "Group 1 or 2")
+
+# specify order of signatures
+signature_groups.order <- c("Aging", "DDMR", "SHM", "POLE", "Other", "Unknown")
+
+p <- ggplot(data=plot_data, aes(x = factor(signature_group, levels = signature_groups.order), 
+                                y = proportion,
+                                fill = plot_data$feature_category)) +
+  geom_bar(stat="identity", position=position_dodge(), width = 0.8) +
+  scale_y_continuous(name = "Mutations attributable to signature / \nTotal mutations") +
+  xlab("") +
+  theme_bw() +
+  theme(legend.position="bottom") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5),
+        plot.margin = unit(c(1,1,1,1), "cm")) +
+  scale_fill_brewer(palette = "Paired", name = "")
+
+#p + stat_pvalue_manual(data = pvalues, x = "signature_group", y.position = 0.48, label = 'p.signif')
+
+#+ stat_compare_means(paired = TRUE)
+
+p + facet_grid(. ~ feature_name,  scales="fixed")
 
 
+#means <- as.data.frame(compare_means(proportion ~ signature_group, data=plot_data, method = "t.test"))
 ```
 
 
