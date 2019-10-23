@@ -848,7 +848,7 @@ write.table(pvalue_table.combined, "/Volumes/shung/projects/gzl_exomes/snv_analy
 
 ## Create plot to visualize data from contingency table
 
-Idea: Two-sided rotated bar plot (akin to a forest plot) showing proportions of each category - each row would be a signature, and each side of the bar plot would represent a different category (e.g. left = EBV-, right = EBV+)
+Create a (faceted) bar plot showing proportions of each category - each row would be a signature, and each side of the bar  would represent a different category (e.g. left = EBV-, right = EBV+).
 
 ## ###################
 ## EBV vs. signatures
@@ -900,14 +900,66 @@ p <- ggplot(data=plot_data, aes(x = factor(signature_group, levels = signature_g
         plot.margin = unit(c(1,1,1,1), "cm")) +
   scale_fill_brewer(palette = "Paired", name = "")
 
-#p + stat_pvalue_manual(data = pvalues, x = "signature_group", y.position = 0.48, label = 'p.signif')
-
-#+ stat_compare_means(paired = TRUE)
-
 p + facet_grid(. ~ feature_name,  scales="fixed")
 
+# individual plots - one plot for Age, one for EBV status, one for mediastinal involvement, and one for pathology
+plot_data.age <- filter(plot_data, plot_data$feature_name == "Age")
+plot_data.ebv <- filter(plot_data, plot_data$feature_name == "EBV status")
+plot_data.med <- filter(plot_data, plot_data$feature_name == "Mediastinal involvement")
+plot_data.path <- filter(plot_data, plot_data$feature_name == "Pathology")
 
-#means <- as.data.frame(compare_means(proportion ~ signature_group, data=plot_data, method = "t.test"))
+# Age
+p.age <- ggplot(data=plot_data.age, aes(x = factor(signature_group, levels = signature_groups.order), 
+                                y = proportion,
+                                fill = feature_category)) +
+  geom_bar(stat="identity", position=position_dodge(), width = 0.8) +
+  scale_y_continuous(name = "Proportion of mutations\nattributable to signature") +
+  xlab("") +
+  theme_bw() +
+  theme(legend.position="bottom") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5),
+        plot.margin = unit(c(1,1,1,1), "cm")) +
+  scale_fill_brewer(palette = "Paired", name = "")
+
+# EBV status
+p.ebv <- ggplot(data=plot_data.ebv, aes(x = factor(signature_group, levels = signature_groups.order), 
+                                y = proportion,
+                                fill = feature_category)) +
+  geom_bar(stat="identity", position=position_dodge(), width = 0.8) +
+  scale_y_continuous(name = "Proportion of mutations\nattributable to signature") +
+  xlab("") +
+  theme_bw() +
+  theme(legend.position="bottom") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5),
+        plot.margin = unit(c(1,1,1,1), "cm")) +
+  scale_fill_manual(values = c("#b2df8a", "#33a02c"), name = "")
+
+# Mediastinal involvment
+p.med <- ggplot(data=plot_data.med, aes(x = factor(signature_group, levels = signature_groups.order), 
+                                y = proportion,
+                                fill = feature_category)) +
+  geom_bar(stat="identity", position=position_dodge(), width = 0.8) +
+  scale_y_continuous(name = "Proportion of mutations\nattributable to signature") +
+  xlab("") +
+  theme_bw() +
+  theme(legend.position="bottom") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5),
+        plot.margin = unit(c(1,1,1,1), "cm")) +
+  scale_fill_manual(values = c("#fdbf6f", "#ff7f00"), name = "")
+
+# Pathology
+p.path <- ggplot(data=plot_data.path, aes(x = factor(signature_group, levels = signature_groups.order), 
+                                y = proportion,
+                                fill = feature_category)) +
+  geom_bar(stat="identity", position=position_dodge(), width = 0.8) +
+  scale_y_continuous(name = "Proportion of mutations\nattributable to signature") +
+  xlab("") +
+  theme_bw() +
+  theme(legend.position="bottom") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5),
+        plot.margin = unit(c(1,1,1,1), "cm")) +
+  scale_fill_manual(values = c("#fb9a99", "#e31a1c"), name = "")
+
 ```
 
 
