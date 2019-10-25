@@ -12,26 +12,35 @@ This script applies the MutationalPatterns package to understand mutational sign
 ## 1. Modify master MAF file to be used to generate VCF files so that tumor names are actually gene names
 
 ```{r}
+# read in the mutations
 maf <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs_indels.full_cohort_minus_GZ229.default_and_optimized.incl_silent_and_UTR.for_vcf_conversion.maf", sep = "\t", header = TRUE, fill = TRUE)
-```
 
-
-
-```{r}
-# filter for mutations that are mutated in 3+ cases based on pathology groupings
+# read in the list of genes we are interested in
 genes.mutated_3_plus <- read.table("/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/genes.ordered.CURRENT.mutated_in_3+_cases.txt", sep = "\t", header = TRUE, row.names = 1)
 colnames(genes.mutated_3_plus) <- c("gene")
+
+# Exclude GZ310 mutations
+maf <- filter(maf, maf$Tumor_Sample_Barcode != "GZ-310")
+
+# remove indels since they will not be analyzed
+maf <- filter(maf, maf$Variant_Type == "SNP")
+
+# filter for mutations that are mutated in 3+ cases based on pathology groupings
 maf <- filter(maf, maf$Hugo_Symbol %in% genes.mutated_3_plus$gene)
 maf$Hugo_Symbol <- factor(maf$Hugo_Symbol)
 
 # now create new Tumor_Sample_Barcode so that it contains the gene names, instead of the actual patient names
 maf.cols <- colnames(maf)
 maf$New_Tumor_Sample_Barcode <- maf$Hugo_Symbol
-# rename columns
-colnames(maf) <- c(c("Hugo_Symbol", "Tumor_Sample_Barcode.old"), maf.cols[3:32], c("Tumor_Sample_Barcode"))
+maf$Tumor_Sample_Barcode <- NULL
 
-write.table(maf, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs_indels.full_cohort_minus_GZ229.default_and_optimized.incl_silent_and_UTR.top_path_genes_only.for_vcf_conversion.maf", sep = "\t", quote = FALSE, row.names = FALSE)
+# rename columns
+colnames(maf) <- c(c("Tumor_Sample_Barcode.old", "Hugo_Symbol"), maf.cols[3:32], c("Tumor_Sample_Barcode"))
+
+write.table(maf, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs.full_cohort_minus_GZ229_and_Gz310.default_and_optimized.incl_silent_and_UTR.top_path_genes_only.for_vcf_conversion.maf", sep = "\t", quote = FALSE, row.names = FALSE)
+
 ## Remember to switch back to 3'UTR and 5'UTR effects (from 3_PRIME_UTR and 5_PRIME_UTR)
+
 ```
 
 ## 2. Run maf2vcf.pl
@@ -62,7 +71,7 @@ library(MutationalPatterns)
 ref_genome <- "BSgenome.Hsapiens.UCSC.hg19"
 
 # specify location of VCF files
-vcf_files <- list.files(path = "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/vcf/gene_level/", pattern = "*.vcf", full.names = TRUE, all.files = TRUE)
+vcf_files <- list.files(path = "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/vcf/gene_level/excluding_GZ310/", pattern = "*.vcf", full.names = TRUE, all.files = TRUE)
 
 # read in sample names to annotate the VCF files
 genes.mutated_3_plus$gene <- sort(genes.mutated_3_plus$gene)
@@ -89,17 +98,24 @@ context <- mut_context(vcf[[1]], ref_genome)
 type_context <- type_context(vcf[[1]], ref_genome)
 # count mutation type occurrences for all VCF objects in the GRangesList
 type_occurrences <- mut_type_occurrences(vcf, ref_genome)
+```
+
+## Mutation Spectrum
+
+```{r}
 # plot all mutations
 plot_spectrum(type_occurrences, CT = TRUE)
 # plot by gene
 plot_spectrum(type_occurrences, by = sample_names, CT = TRUE, legend = TRUE)
+```
 
-### 96 mutational profile
+## 96 mutational profile
 
+```{r}
 # generate a 96-trinucleotide mutation count matrix
 mut_mat <- mut_matrix(vcf_list = vcf, ref_genome = ref_genome)
-plot_96_profile(mut_mat)
-
+# plot the 96 profile of all the samples
+#plot_96_profile(mut_mat)
 ```
 
 ## COSMIC mutational signatures
@@ -108,59 +124,82 @@ plot_96_profile(mut_mat)
 # Download mutational signatures from the COSMIC website (saved local directory to avoid connection issues)
 sp_url <- paste("https://cancer.sanger.ac.uk/cancergenome/assets/", "signatures_probabilities.txt", sep = "")
 cancer_signatures = read.table(sp_url, sep = "\t", header = TRUE)
-#cancer_signatures <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/signatures_probabilities.txt", sep = "\t", header = TRUE)
+
 # Match the order of the mutation types to MutationalPatterns standard
 new_order = match(row.names(mut_mat), cancer_signatures$Somatic.Mutation.Type)
+
 # Reorder cancer signatures dataframe
 cancer_signatures = cancer_signatures[as.vector(new_order),]
+
 # Add trinucletiode changes names as row.names
 row.names(cancer_signatures) = cancer_signatures$Somatic.Mutation.Type
+
 # Keep only 96 contributions of the 30 signatures in matrix
 cancer_signatures = as.matrix(cancer_signatures[,4:33])
+
 # plot mutational profile of the COSMIC signatures
-plot_96_profile(cancer_signatures, condensed = TRUE, ymax = 0.3)
+#plot_96_profile(cancer_signatures, condensed = TRUE, ymax = 0.3)
+
 # hierarchically cluster the COSMIC signatures based on their similarity with average linkage:
 hcluster_cosmic <- cluster_signatures(cancer_signatures, method = "average")
 cosmic_order <- colnames(cancer_signatures)[hcluster_cosmic$order]
-plot(hcluster_cosmic)
+#plot(hcluster_cosmic)
+```
+
+## Similarity between de novo signatures and COSMIC signatures
+
+```{r}
+# calculate pairwise cosine similarity between mutational profiles and COSMIC signatures
+cos_sim_denovo_signatures <- cos_sim_matrix(nmf_res$signatures, cancer_signatures)
+
+# plot heatmap of cosine similarities
+plot_cosine_heatmap(cos_sim_denovo_signatures, col_order = cosmic_order, cluster_rows = FALSE, plot_values=TRUE)
+
+## plot signature contribution as heatmap
+pheatmap1 <- plot_contribution_heatmap(nmf_res$contribution, cluster_samples=FALSE)
+```
+
 
 ## Similarity between mutational profiles and COSMIC signatures
 
+```{r}
 # calculate pairwise cosine similarity between mutational profiles and COSMIC signatures
 cos_sim_samples_signatures <- cos_sim_matrix(mut_mat, cancer_signatures)
-# plot heatmap with specific signature order
-plot_cosine_heatmap (cos_sim_samples_signatures, col_order = cosmic_order, cluster_rows = TRUE)
 
-# Find optimal contribution of COSMIC signatures to reconstruct 96 mutational profiles
+# plot heatmap with specific signature order
+plot_cosine_heatmap (cos_sim_samples_signatures, cluster_rows = TRUE, col_order = cosmic_order)
 
 # fit mutation matrix to the COSMIC mutational signatures
 fit_res <- fit_to_signatures(mut_mat, cancer_signatures)
-# print contributions to output
-contributions <- fit_res$contribution
-write.table(contributions, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/gene_level_path_groups_3+_mutated/contributions.txt", sep = "\t", quote = FALSE)
-# print reconstructed to output
-gene.reconstructed.trinucleotide_profile <- fit_res$reconstructed
 
+# print contributions to output
+write.table(fit_res$contribution, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/gene_level-excluding_GZ310/contributions.txt", sep = "\t", quote = FALSE)
+```
+
+## Default plots showing absolute and relative contributions of mutations (per gene)
+
+```{r}
 # plot contributions of all COSMIC signatures for each gene
 plot_contribution(contributions, cancer_signatures, coord_flip = TRUE, mode = "absolute")
 
 # plot optimal contribution of the COSMIC signatures in each sample as stacked barplot
 # first select signatures with a minimum of X mutations (summed across all samples) contributing to that signature
 select <- which (rowSums(contributions) >= 10)
+
 # plot contribution barplot
-plot_contribution(contributions[select,], cancer_signatures[,select], coord_flip = TRUE, mode = "absolute")
+abs_contrib.top_signatures <- plot_contribution(contributions[select,], cancer_signatures[,select], coord_flip = TRUE, mode = "absolute")
+
 # and the same plot, but for relative contributions
 plot_contribution(contributions[select,], cancer_signatures[,select], coord_flip = TRUE, mode = "relative")
 ```
 
-
-# Establish distribution of contributions across all patients and signatures
+# Establish distribution of contributions across all genes and signatures
 
 ```{r}
 library(tidyr)
 library(ggplot2)
 
-optimal_contributions <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/gene_level_path_groups_3+_mutated/contributions.txt", sep = "\t", header = TRUE, row.names = 1, stringsAsFactors = FALSE)
+optimal_contributions <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/gene_level-excluding_GZ310/contributions.txt", sep = "\t", header = TRUE, row.names = 1, stringsAsFactors = FALSE)
 
 optimal_contributions.matrix <- as.data.frame(t(optimal_contributions))
 mutation_sums <- rowSums(optimal_contributions.matrix)
@@ -169,9 +208,10 @@ mutation_sums <- rowSums(optimal_contributions.matrix)
 optimal_contributions.matrix.norm <- optimal_contributions.matrix/mutation_sums
 
 # print out to file
-write.table(optimal_contributions.matrix.norm, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/gene_level_path_groups_3+_mutated/top_path_genes-optimal_contributions-COSMIC.normalized.txt", sep = "\t", quote = FALSE)
+#write.table(optimal_contributions.matrix.norm, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/gene_level-excluding_GZ310/top_path_genes-optimal_contributions-COSMIC.normalized.txt", sep = "\t", quote = FALSE)
 
 # convert from wide to long
+optimal_contributions.matrix.norm$gene <- row.names(optimal_contributions.matrix.norm)
 optimal_contributions.long <- gather(optimal_contributions.matrix.norm, signature, contribution, Signature.1:Signature.30)
 
 # order by contributions
@@ -185,6 +225,39 @@ p <- ggplot(optimal_contributions.long, aes(as.numeric(contribution))) +
   geom_vline(xintercept = 0.02, col="red", lty=2) +
   theme(axis.title.x = element_blank(), axis.title.y = element_blank()) +
   ggtitle("Mutations in genes mutated in 3+ cases")
+
+## ABSOLUTE NUMBERS OF MUTATIONS
+
+# convert from wide to long
+optimal_contributions.matrix$gene <- row.names(optimal_contributions.matrix)
+contributions.long <- gather(optimal_contributions.matrix, signature, contribution, Signature.1:Signature.30)
+
+# order by contributions
+contributions.long <- contributions.long[order(contributions.long$contribution), ]
+
+# order genes by contribution
+# first sum total contributions for each patient
+contributions.long <- contributions.long %>% 
+  dplyr::group_by(gene) %>% dplyr::mutate(total_contribution = sum(as.numeric(contribution)))
+# calculate relative contribution per gene (useful for a relative contribution plot)
+contributions.long <- as.data.frame(contributions.long %>% dplyr::mutate(relative_contribution = as.numeric(contribution) / total_contribution))
+# now order first by EBV status, and then by decreasing total contribution by patient
+contributions.long <- contributions.long[with(contributions.long, 
+                                              order(-total_contribution)), ]
+# specify order of patients (based on our sorting)
+contributions.long$gene <- factor(contributions.long$gene)
+genes.ordered <- unique(contributions.long$gene)
+
+# barplot (using absolute numbers of mutations)
+p.abs.all_signatures <- ggplot(data = contributions.long, 
+                               aes(factor(x = gene, levels = genes.ordered), 
+                                   y = as.numeric(contribution), fill = signature)) + 
+  geom_bar(stat = "identity", width = 0.7, size = 0.8) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5),
+        axis.text.y = element_text(face = "italic")) +
+  xlab("") + 
+  ylab("Number of mutations") + coord_flip()
+
 ```
 
 ## Create new contribution matrix based on contribution cutoff and grouping of top and key signatures
@@ -206,7 +279,7 @@ Categories:
 library(ggplot2)
 library(tidyr)
 
-optimal_contributions <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/gene_level_path_groups_3+_mutated/contributions.txt", sep = "\t", header = TRUE, row.names = 1, stringsAsFactors = FALSE)
+optimal_contributions <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/gene_level-excluding_GZ310/contributions.txt", sep = "\t", header = TRUE, row.names = 1, stringsAsFactors = FALSE)
 
 # create new contribution matrix with just the 5 signature groups
 df <- as.data.frame(t(optimal_contributions))
@@ -228,14 +301,52 @@ contributions.grouped.long <- gather(contributions.grouped,
                                      contributions.aging:contributions.unknown)
 colnames(contributions.grouped.long) <- c("gene", "signature_group", "contribution")
 
-write.table(contributions.grouped.long, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/gene_level_path_groups_3+_mutated/contributions-gene_level-normalized.grouped.txt", sep = "\t", quote = FALSE)
+# Update signature group names
+contributions.grouped.long$signature_group <- plyr::revalue(contributions.grouped.long$signature_group, 
+                            c("contributions.aging"="Aging (1)", 
+                            "contributions.DDMR"="Defective DNA mismatch repair (3, 6, 15, 20, 26)",
+                            "contributions.SHM"="Somatic hypermutation (2, 9, 13)",
+                            "contributions.POLE"="POLE activity (10)",
+                            "contributions.other"="Other signatures with known aetiology (4, 7, 11, 22, 24, 29)",
+                            "contributions.unknown"="Signatures with unknown aetiology"))
 
-# add pathway annotations and formal signature group names manually in Excel
-plot_data <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/gene_level_path_groups_3+_mutated/contributions-gene_level-normalized.grouped.annotated.with_pathways.txt", sep = "\t", header = TRUE)
 
-# specify order of genes (based on pathway groups)
-genes.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/gene_level_path_groups_3+_mutated/genes.ordered.txt", header = TRUE)
-genes.ordered <- genes.ordered$gene
+# add pathway mappings
+pathway.mappings <- read.table("/Volumes/shung/projects/gzl_exomes/pathway_analysis/gene_panel-pathway_mappings.CS.txt", sep = "\t", header = TRUE)
+contributions.grouped.long <- merge(contributions.grouped.long, pathway.mappings, by = "gene")
+plot_data <- contributions.grouped.long
+
+write.table(contributions.grouped.long, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/gene_level-excluding_GZ310/contributions.long.txt", sep = "\t", quote = FALSE)
+
+##################################
+# Order by contributions by gene
+##################################
+
+# first sum total contributions for each gene
+plot_data <- plot_data %>% 
+  dplyr::group_by(gene) %>% dplyr::mutate(total_contribution = sum(as.numeric(contribution)))
+# calculate relative contribution per gene (useful for a relative contribution plot)
+plot_data <- as.data.frame(plot_data %>% dplyr::mutate(relative_contribution = as.numeric(contribution) / total_contribution))
+# now order first by EBV status, and then by decreasing total contribution by patient
+plot_data <- plot_data[with(plot_data, order(Pathway_graph, -total_contribution)), ]
+
+# specify order of patients (based on our sorting)
+plot_data$gene <- factor(plot_data$gene)
+genes.ordered <- unique(plot_data$gene)
+
+#######################################
+# Order by top signature contributions
+######################################
+
+# extract aging and DDMR contributions for sorting purposes
+temp <- filter(plot_data, plot_data$signature_group == "Aging (1)" | plot_data$signature_group == "Defective DNA mismatch repair (3, 6, 15, 20, 26)")
+temp <- temp[c("gene", "signature_group", "contribution")]
+# sort by DDMR,  then by aging
+temp.wide <- spread(temp, signature_group, contribution)
+colnames(temp.wide) <- c("gene", "aging_contribution", "DDMR_contribution")
+temp.wide.ordered <- temp.wide[with(temp.wide, order(-as.numeric(DDMR_contribution), 
+                                             -as.numeric(aging_contribution))), ]
+genes.ordered <- unique(temp.wide.ordered$gene)
 
 # specify order of signature groups:
 sig_groups.order <- c("Aging (1)",
@@ -250,10 +361,10 @@ p.absolute <- ggplot(data = plot_data,
              aes(factor(x = gene, levels = genes.ordered), 
                      y = as.numeric(contribution), 
                      fill = factor(signature_group, levels = sig_groups.order), 
-                     color = pathway)) + 
+                     color = Pathway_graph)) + 
   geom_bar(stat = "identity", width = 0.7, size = 0.8) + 
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5, face = "italic")) +
-  scale_color_brewer(name = "Pathway", palette="Set3") +
+  scale_colour_brewer(name = "Pathway", palette = "Set3") +
   scale_fill_manual(name = "Signature group",
                     values = c("Aging (1)" = "rosybrown1",
                                "Defective DNA mismatch repair (3, 6, 15, 20, 26)" = "mediumpurple1",
@@ -263,24 +374,19 @@ p.absolute <- ggplot(data = plot_data,
                                "Signatures with unknown aetiology" = "gray48")) +
   xlab("") + 
   ylab("Number of mutations")
-  
-# for a very fine outline (use inside geom_bar):
-# size = 0.2
 
-# Need to calculate relative proportions of mutations 
-library(dplyr)
-# first sum total contributions for each gene
-plot_data <- plot_data %>% 
-  dplyr::group_by(gene) %>% dplyr::mutate(total_contribution = sum(as.numeric(contribution)))
-# calculate relative contribution per gene
-plot_data <- plot_data %>% dplyr::mutate(relative_contribution = contribution / total_contribution)
+#  geom_tile(data=plot_data, aes(factor(x = gene, levels = genes.ordered), 
+#                     y = -1, color = Pathway_graph)) +
+#  scale_fill_brewer(name = "Pathway", palette = "Set3") +
+  
+
 
 # barplot (relative stacked bars)
 p.relative <- ggplot(data = plot_data, 
              aes(factor(x = gene, levels = genes.ordered), 
                      y = as.numeric(relative_contribution), 
                      fill = factor(signature_group, levels = sig_groups.order), 
-                     color = pathway)) + 
+                     color = Pathway_graph)) + 
   geom_bar(stat = "identity", width = 0.7, size = 0.8) + 
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5, face = "italic")) +
   scale_color_brewer(name = "Pathway", palette="Set3") +
