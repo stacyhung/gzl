@@ -16,164 +16,53 @@ NB: Previously, genes were filtered based on the requirement of being mutated in
 ## Load packages
 
 ```{r}
-# NB: if you need to install this package, install it using devtools from the github source!!!
-# The bioconductor version of GenVisR is buggy (not compatible with required libraries)
-# Installing GenVisR may also require the installation of the VariantAnnotation pacakge (from bioconductor)
-#source("https://bioconductor.org/biocLite.R")
-#biocLite("VariantAnnotation")
-
-library(devtools)
-install_github("griffithlab/GenVisR")
-
-library(VariantAnnotation)
-library(GenVisR)
 library(maftools)
-
 library(gridExtra)
 library(dplyr)
 library(plyr)
 ```
 
-## Transform GISTIC data into MAF format so that it can be used for oncoplot
-
-```{r}
-library(tidyr)
-
-gistic.heatmap <- read.table("/Volumes/shung/projects/gzl_exomes/gistic/output/0.3_amp_0.3_del_0.98_focal_cutoff_2.5_cap_FINAL/for_R_oncoplot/selected_peaks_for_R_oncoplot.txt", sep = "\t", header = TRUE)
-
-# wide to long
-gistic.heatmap.long <- gather(gistic.heatmap, case, copy_number_change, GZ.BCC.020:GZ.229, factor_key = TRUE)
-
-# convert to maf format (add appropriate columns as needed)
-colnames(gistic.heatmap.long) <- c("Hugo_Symbol", "Tumor_Sample_Barcode", "Variant_Classification")
-
-write.table(gistic.heatmap.long, "/Volumes/shung/projects/gzl_exomes/gistic/output/0.3_amp_0.3_del_0.98_focal_cutoff_2.5_cap_FINAL/for_R_oncoplot/gistic.heatmap.long.txt", sep = "\t", quote = FALSE, row.names = FALSE)
-
-```
-
-## GISTIC oncoplot
-
-```{r}
-library(maftools)
-
-mut.maf <- read.table("/Volumes/shung/projects/gzl_exomes/MutSig/")
-
-mut.df <- read.table("/Volumes/shung/projects/gzl_exomes/gistic/output/0.3_amp_0.3_del_0.98_focal_cutoff_2.5_cap_FINAL/for_R_oncoplot/selected_gistic_peaks_v2.maf", sep = "\t", header = TRUE)
-
-# require fields: Hugo_Symbol, Tumor_Sample_Barcode, Variant_Classification, Chromosome, Start_Position, End_Position,  Tumor_Seq_Allele2, Reference_Allele, Variant_Type (only the first 3 fields need to have values)
-mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/gistic/output/0.3_amp_0.3_del_0.98_focal_cutoff_2.5_cap_FINAL/for_R_oncoplot/selected_gistic_peaks_v3.maf", 
-                          vc_nonSyn = c("High-level amplification", "Low-level amplification", 
-                                        "High-level deletion", "Low-level deletion"))
-
-# for oncoplot - want to display patients in same order as oncoplot-by_path_group.pdf
-patients.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/patients.ordered.CURRENT.txt")
-patients.ordered <- as.vector(patients.ordered$x)
-
-# for feature ordering (in this case, the features are gistic peaks with GOI), first order by CNA type (amplifications, then losses) and then by decreasing frequency across the cohort.
-features.ordered <- c("JAK2, CD274, PDCD1LG2 (9p24.1)", "USP18 (22q11.21)", "GTF2H2, NAIP (5q13.2)", "REL, BCL11A (2p16.1)", "SLX1B (16p11.2)", "PRMT6 (1p21.1)", "IRF5, RELN, LRRN3 (7q35)", "ATM (11q14.3)", "NCOR2 (12q24.33)", "CDKN2A, CDKN2B (9p21.3)")
-#features.ordered <- c("9p24.1", "22q11.21", "5q13.2", "2p16.1", "16p11.2", "1p21.1", "7q35", "11q14.3", "12q24.33", "9p21.3")
-#features.ordered <- c("JAK2, CD274, PDCD1LG2", "USP18", "GTF2H2, NAIP", "REL, BCL11A", "SLX1B", "PRMT6", "IRF5, RELN, LRRN3", "ATM", "NCOR2", "CDKN2A, CDKN2B")
-
-# change colours for variant classifications
-# light read --> R:243, G:191, B:181 or hex: #F3BFBF
-#vc_cols <- c("firebrick", "firebrick1", "grey", "slategrey3", "steelblue4")
-#names(vc_cols) <- c("Amplification", "Gain", "No change", "Heterozygous loss", "Homozygous loss")
-vc_cols <- c("firebrick", "#F3BFBF", "slategray3", "steelblue4")
-names(vc_cols) <- c("High-level amplification", "Low-level amplification", "Low-level deletion", "High-level deletion")
-
-oncoplot(maf = mutations.maf, drawRowBar = TRUE,
-         sampleOrder = patients.ordered,
-         genes = features.ordered, keepGeneOrder = TRUE,
-         colors = vc_cols,
-         legendFontSize = 1.5, SampleNamefontSize = 0.5, fontSize = 0.5,
-         showTumorSampleBarcodes = TRUE, 
-         titleFontSize = 0.01)
-
-# for future debugging: need to figure out why frequency bars on right-hand side are not showing up
-
-```
-
-## Get list of genes to use for oncoplot
-
-```{r}
-library(dplyr)
-library(plyr)
-
-# get list of mutations
-maf <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs_indels.full_cohort_minus_GZ229.default_and_optimized.incl_silent_and_UTR.for_vcf_conversion.maf", sep = "\t", header = TRUE, fill = TRUE)
-
-# load MutSig genes
-genes.mutsig <- read.table("/Volumes/shung/projects/gzl_exomes/MutSig/output/gene.covariates.1.4.1.ensembl.ss_filter.variants_in_normals_removed.incl_GZ197/genes.mutsig.txt")
-colnames(genes.mutsig) <- c("gene")
-
-# remove excluded cases - GZ222, GZ229, GZ310
-excluded.cases <- c("GZ-222", "GZ-229", "GZ-310")
-maf <- filter(maf, !(maf$Tumor_Sample_Barcode %in% excluded.cases))
-
-# remove silent and UTR mutations (since they are not relevant for the oncoplot)
-excluded.variant_classes <- c("Silent", "5_PRIME_UTR", "3_PRIME_UTR")
-maf <- filter(maf, !(maf$Variant_Classification %in% excluded.variant_classes))
-
-# remove redundant columns
-maf$tumor_id <- NULL # Tumor_Sample_Barcode
-maf$gene <- NULL # Hugo_Symbol
-
-# filter for mutsig genes
-maf <- filter(maf, maf$Hugo_Symbol %in% genes.mutsig$gene)
-
-# write out the maf file, so that it can be read in as a maf file
-write.table(maf, "/Volumes/shung/projects/gzl_exomes/MutSig/output/gene.covariates.1.4.1.ensembl.ss_filter.variants_in_normals_removed.incl_GZ197/snvs_indels.28_cohort.default_and_optimized.for_oncoplot.maf", quote = FALSE, row.names = FALSE, sep = "\t")
-
-```
-
 ## Path group-specific oncoplots
 
 ```{r}
-# to get latest version of maftools, install from github
-#library("devtools")
-#install_github(repo = "PoisonAlien/maftools")
-library(maftools)
-
 clinical.data <- read.table("/Volumes/shung/projects/gzl_exomes/data/GZ_WES_cases-clinical_data.with_updated_mediastinal_and_age.txt", sep = "\t", header = TRUE)
 clinical.data$Path_group <- revalue(clinical.data$Path_group, 
                                           c("0 = cHL"="0_=_cHL",
                                             "1 = cHL-interm"="1_=_cHL-interm",
                                             "2 = LBCL-interm"="2_=_LBCL-interm",
                                             "3 = LBCL"="3_=_LBCL"))
+# extract tumor id mappings
+id_mappings <- clinical.data[,c("Tumor_Sample_Barcode", "tumor_id2")]
 
-#mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/gzl_exomes-snvs_indels.filtered_path_group.with_REMOVE_gene.maf", clinicalData = clinical.data)
-mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/MutSig/output/gene.covariates.1.4.1.ensembl.ss_filter.variants_in_normals_removed.incl_GZ197/snvs_indels.28_cohort.default_and_optimized.for_oncoplot.maf", clinicalData = clinical.data)
+# read in mutations as dataframe (so that we can map tumor ids)
+mutations.df <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/maf/snvs_indels.full_cohort_minus_GZ229.default_and_optimized.target_genes.no_UTRs.maf", sep = "\t", header = TRUE, fill = TRUE, stringsAsFactors = TRUE)
 
-genes.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/genes.ordered.CURRENT.txt")
-genes.ordered <- as.vector(genes.ordered$x)
-patients.ordered <- read.table("/Volumes/shung/projects/gzl_exomes/data/Path_group_visualization/patients.ordered.CURRENT.txt")
-patients.ordered <- as.vector(patients.ordered$x)
+# add mappable tumor code (to be consistent with clinical data)
+mutations.df$tumor_id2 <- mutations.df$Tumor_Sample_Barcode
+mutations.df$Tumor_Sample_Barcode <- NULL
+mutations.df <- merge(mutations.df, id_mappings, by = "tumor_id2")
+
+# write out new maf
+write.table(mutations.df, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/maf/snvs_indels.full_cohort_minus_GZ229.default_and_optimized.target_genes.no_UTRs.for_oncoplot.maf", sep = "\t", quote = FALSE, row.names = FALSE)
+
+mutations.maf <- read.maf("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/maf/snvs_indels.full_cohort_minus_GZ229.default_and_optimized.target_genes.no_UTRs.for_oncoplot.maf", clinicalData = clinical.data)
 
 # colours for annotation tracks
-annot.colors <- list(Gender = c("Female" = "palevioletred1", "Male" = "royalblue1"),
-                     EBER = c("Negative" = "black", "Positive" = "red"),
+annot.colors <- list(EBER = c("Negative" = "black", "Positive" = "red"),
                      Mediastinal = c("Not_involved" = "grey", "Secondary" = "plum2", "Primary" = "purple"),
-                     Age_yrs = c("<_45" = "bisque", "45_<_age_<_60"="navajowhite3", ">=_60" = "bisque4"),
                      Path_group = c("0_=_cHL" = "lightsalmon",
                                    "1_=_cHL-interm" = "khaki1",
                                    "2_=_LBCL-interm" = "lightgreen", 
                                    "3_=_LBCL" = "steelblue1")
                )
 
-# show patients ordered by group, and mutations ordered by frequency
-# include "REMOVE" gene since the removeNonMutated parameter doesn't work (i.e. doesn't show non-mutated case when FALSE)
-genes.ordered <- c(genes.ordered, "REMOVE")
-
-oncoplot(maf = mutations.maf, SampleNamefontSize = 0.6, top = 133,
+oncoplot(maf = mutations.maf, SampleNamefontSize = 0.65, top = 36, 
          removeNonMutated = FALSE,
          keepGeneOrder = TRUE, fontSize = 0.6, titleFontSize = 0, legendFontSize = 1, annotationFontSize = 1,
-         clinicalFeatures = c("Path_group", "EBER", "Mediastinal_involvement", "Gender", "Age_category"),
+         clinicalFeatures = c("Path_group", "EBER", "Mediastinal_involvement"),
          annotationColor = annot.colors, 
          showTumorSampleBarcodes = TRUE,
-         drawColBar = FALSE)
-#         sampleOrder = patients.ordered,
-#         genes = genes.ordered, 
-
+         drawColBar = FALSE, writeMatrix = TRUE)
 
 # version with large patient font
 oncoplot(maf = mutations.maf, SampleNamefontSize = 0.75,
