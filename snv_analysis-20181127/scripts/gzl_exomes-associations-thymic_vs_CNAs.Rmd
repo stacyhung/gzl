@@ -1,0 +1,72 @@
+---
+title: "GZL exomes - associations - thymic vs. CNAs"
+author: "Stacy Hung"
+date: "November 12, 2019"
+output: html_document
+---
+
+This script tests the association between thymic status (primary mediastinal vs. not primary mediastinal) and signficant copy number alterations (as predicted by GISTIC) for relevant GZL exome patients.
+
+## Test associations
+
+```{r}
+contingency.df <- read.table("/Volumes/shung/projects/gzl_exomes/gistic/output/0.3_amp_0.3_del_0.98_focal_cutoff_2.5_cap_FINAL/for_R_associations/contingency-thymic_vs_CNAs-high+low.txt", sep = "\t", header = TRUE, row.names = 1)
+
+# get number of CNA
+NUM_CNA <- ncol(contingency.df)
+
+# get the distinct CNAs
+CNAs <- as.vector(unique(colnames(contingency.df)))
+
+contingency_table <- array(dim = c(NUM_CNA*2, 2))
+pval_table <- array(dim = c(NUM_CNA, 1))
+
+i <- 1 # row counter for filling in full contingency table
+k <- 1 # row counter for filling in the p-value table
+
+# row number for primary vs. non-primary mediastinal data
+THYMIC = 2
+NON_THYMIC = 1
+NUM_PATIENTS = 30
+
+# for each signature
+for (CNA in CNAs){
+    
+    # get values for contingency table
+    num.thymic_and_CNA <- contingency.df[THYMIC, CNA]
+    num.thymic_and_not_CNA <- NUM_PATIENTS - contingency.df[THYMIC, CNA]
+    num.not_thymic_and_CNA <- contingency.df[NON_THYMIC, CNA]
+    num.not_thymic_and_not_CNA <- NUM_PATIENTS - contingency.df[NON_THYMIC, CNA]
+  
+    # chi-square test
+    sam <- array(dim = c(2,2))
+    sam[1, ] <- c(num.thymic_and_CNA, num.not_thymic_and_CNA)
+    sam[2, ] <- c(num.thymic_and_not_CNA, num.not_thymic_and_not_CNA)
+    
+    curr_row.start <- i
+    curr_row.end <- i+1
+
+    contingency_table[curr_row.start:curr_row.end, 1:2] <- sam
+    i <- i + 2
+    
+    # Chi-Square test
+    pvalue <- chisq.test(sam)$p.value
+    pval_table[k, 1] <- pvalue
+    k <- k + 1
+}
+  
+colnames(pval_table) <- c("thymic_status")
+row.names(pval_table) <- CNAs
+
+not.CNAs <- paste("Not ", CNAs, sep = "")
+contingency.row_names <- c(rbind(CNAs, not.CNAs))
+
+colnames(contingency_table) <- c("thymic", "not thymic")
+row.names(contingency_table) <- contingency.row_names
+
+write.table(contingency_table, "/Volumes/shung/projects/gzl_exomes/gistic/chisq_tests/contingency-thymic_vs_CNAs-high+low.txt", sep = "\t", quote = FALSE)
+
+write.table(pval_table, "/Volumes/shung/projects/gzl_exomes/gistic/chisq_tests/chisq-thymic_vs_key_CNAs-high+low.txt", sep = "\t", quote = FALSE)
+
+```
+
