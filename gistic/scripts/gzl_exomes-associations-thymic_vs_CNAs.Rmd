@@ -28,16 +28,17 @@ k <- 1 # row counter for filling in the p-value table
 # row number for primary vs. non-primary mediastinal data
 THYMIC = 2
 NON_THYMIC = 1
-NUM_PATIENTS = 30
+NUM_THYMIC = 15
+NUM_NON_THYMIC = 14
 
 # for each signature
 for (CNA in CNAs){
     
     # get values for contingency table
     num.thymic_and_CNA <- contingency.df[THYMIC, CNA]
-    num.thymic_and_not_CNA <- NUM_PATIENTS - contingency.df[THYMIC, CNA]
+    num.thymic_and_not_CNA <- NUM_THYMIC - contingency.df[THYMIC, CNA]
     num.not_thymic_and_CNA <- contingency.df[NON_THYMIC, CNA]
-    num.not_thymic_and_not_CNA <- NUM_PATIENTS - contingency.df[NON_THYMIC, CNA]
+    num.not_thymic_and_not_CNA <- NUM_NON_THYMIC - contingency.df[NON_THYMIC, CNA]
   
     # chi-square test
     sam <- array(dim = c(2,2))
