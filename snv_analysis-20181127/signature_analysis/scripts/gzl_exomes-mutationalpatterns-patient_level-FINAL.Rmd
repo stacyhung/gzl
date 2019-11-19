@@ -276,6 +276,8 @@ p.relative <- ggplot(data = contribs.long,
   xlab("") + 
   ylab("Number of mutations") +
   coord_flip()
+
+p.relative
 ```
 
 ## Create new contribution matrix based on grouping of key signatures
@@ -320,7 +322,7 @@ contributions.grouped.long <- gather(contributions.grouped,
                                      contributions.aging:contributions.unknown)
 colnames(contributions.grouped.long) <- c("patient", "signature_group", "contribution")
 
-write.table(contributions.grouped.long, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/contributions-patient-level-normalized.grouped.txt", sep = "\t", quote = FALSE)
+#write.table(contributions.grouped.long, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/contributions-patient-level-normalized.grouped.txt", sep = "\t", quote = FALSE)
 
 # Update ids so they contain dashes
 contributions.grouped.long$patient <- gsub("\\.", "-", contributions.grouped.long$patient)
@@ -350,8 +352,8 @@ plot_data <- plot_data %>% mutate(
 # map mediastinal involvement to primary vs. non-primary (i.e. combine secondary, not involved)
 plot_data <- plot_data %>% mutate(
      med_status = case_when(
-         mediastinal_involvement == "Primary"  ~ 1,
-         mediastinal_involvement == "Secondary" | mediastinal_involvement == "Not involved" ~ 0
+         mediastinal_involvement == "Primary"  ~ "Primary",
+         mediastinal_involvement == "Secondary" | mediastinal_involvement == "Not involved" ~ "Not primary"
      )
 )
 
@@ -364,11 +366,13 @@ plot_data <- plot_data %>% mutate(
 )
 
 plot_data <- as.data.frame(plot_data)
+```
 
-########################
+## ######################
 ## EBV-specific plots ##
-########################
+## ######################
 
+```{r}
 # order patients by EBV status then by increasing numbers of mutations (need to group by patient)
 # first sum total contributions for each patient
 plot_data <- plot_data %>% 
@@ -382,16 +386,28 @@ plot_data <- plot_data[with(plot_data, order(as.character(EBV_status), -total_co
 plot_data$tumor_id <- factor(plot_data$tumor_id)
 tumors.ordered <- unique(plot_data$tumor_id)
 
+# order signature groups by recurrence (proportion)
+# first create column containing average contribution of signature
+mean_contributions <- as.data.frame.table(plot_data %>% dplyr::group_by(signature_group) %>% dplyr::summarise(mean(relative_contribution)))
+mean_contributions$Var1 <- NULL
+mean_contributions$Var2 <- NULL
+mean_contributions <- unique(mean_contributions)
+colnames(mean_contributions) <- c("signature_group", "mean_contribution")
+# merge with full dataframe
+plot_data <- merge(plot_data, mean_contributions, by = "signature_group")
+# now specify order of signature groups based on mean contribution
+sig_groups.order <- (mean_contributions[rev(order(mean_contributions$mean_contribution)),])$signature_group
+
 # specify order of signature groups:
-sig_groups.order <- c("Aging (1)",
-                      "Defective DNA mismatch repair (3, 6, 15, 20, 26)",
-                      "POLE activity (10)",
-                      "Somatic hypermutation (2, 9, 13)",
-                      "Other signatures with known aetiology (4, 7, 11, 22, 24, 29)",
-                      "Signatures with unknown aetiology")
+#sig_groups.order <- c("Aging (1)",
+#                      "Defective DNA mismatch repair (3, 6, 15, 20, 26)",
+#                      "POLE activity (10)",
+#                      "Somatic hypermutation (2, 9, 13)",
+#                      "Other signatures with known aetiology (4, 7, 11, 22, 24, 29)",
+#                      "Signatures with unknown aetiology")
 
 # barplot (using absolute numbers of mutations)
-p.absolute <- ggplot(data = plot_data, 
+p.absolute.ebv <- ggplot(data = plot_data, 
              aes(factor(x = tumor_id, levels = tumors.ordered), 
                      y = as.numeric(contribution), 
                      fill = factor(signature_group, levels = sig_groups.order), 
@@ -409,8 +425,41 @@ p.absolute <- ggplot(data = plot_data,
                                "Signatures with unknown aetiology" = "gray48")) +
   xlab("") + 
   ylab("Number of mutations")
-  
 
+p.absolute.ebv
+
+# order patients by mediastinal status, then by signature contribution starting with most recurrent group
+plot_data <- plot_data[order(plot_data$EBV_status, 
+                             -plot_data$mean_contribution, 
+                             plot_data$relative_contribution),]
+plot_data$tumor_id <- factor(plot_data$tumor_id)
+tumors.ordered <- unique(plot_data$tumor_id)
+
+# relative plot
+# customized relative plot
+p.relative.ebv <- ggplot(data = plot_data, aes(factor(x = tumor_id, levels = tumors.ordered), 
+                                               y = as.numeric(relative_contribution), 
+                                               fill = factor(signature_group, levels = sig_groups.order), 
+                                               color = EBV_status)) + 
+  geom_bar(stat = "identity", width = 0.7, size = 0.8) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_colour_manual(name = "EBER status", 
+                      values = c("Negative"="black", "Positive"="red")) +
+  scale_fill_manual(name = "Signature group",
+                    values = c("Aging (1)" = "rosybrown1",
+                               "Defective DNA mismatch repair (3, 6, 15, 20, 26)" = "mediumpurple1",
+                               "POLE activity (10)" = "lightgreen", 
+                               "Somatic hypermutation (2, 9, 13)" = "dodgerblue", 
+                               "Other signatures with known aetiology (4, 7, 11, 22, 24, 29)" = "gray",
+                               "Signatures with unknown aetiology" = "gray48")) +
+  xlab("") + 
+  ylab("Number of mutations") +
+  coord_flip()
+
+p.relative.ebv
+```  
+
+```{r}
 # now a slightly different plot, showing contributions by signature group (instead of patient), and encoded with EBER
 
 # specify order of signature groups:
@@ -442,6 +491,10 @@ p.signatures <- ggplot(data = plot_data,
                             "POLE activity (10)" = "POLE")) + 
   coord_flip()
 
+p.signatures
+```
+
+```{r}
 # plot contributions by EBV status
 
 plot_data.SHM <- filter(plot_data, plot_data$signature_group == "Somatic hypermutation (2, 9, 13)")
@@ -451,7 +504,8 @@ p.SHM <- ggplot(plot_data.SHM, aes(x=EBV_status, y=as.numeric(contribution) )) +
   ylab("Contribution of mutations to SHM signature") + 
   xlab("EBER status") +
   geom_dotplot(binaxis='y', stackdir='center', dotsize=0.7)
-  
+
+p.SHM  
 #stat_summary(fun.y=mean, geom="point", shape=23, size=4)
 
 ebv_pos <- filter(plot_data.SHM, EBV_status == "Positive")
@@ -471,6 +525,102 @@ t.test(as.numeric(ebv_pos$contribution), as.numeric(ebv_neg$contribution))
 #mean of x mean of y 
 # 5.971257 18.417969 
 ```
+
+
+## ######################
+## Thymic-specific plots ##
+## ######################
+
+```{r}
+# order patients by EBV status then by increasing numbers of mutations (need to group by patient)
+# first sum total contributions for each patient
+plot_data <- plot_data %>% 
+  dplyr::group_by(tumor_id) %>% dplyr::mutate(total_contribution = sum(as.numeric(contribution)))
+# calculate relative contribution per gene (useful for a relative contribution plot)
+plot_data <- as.data.frame(plot_data %>% dplyr::mutate(relative_contribution = as.numeric(contribution) / total_contribution))
+# now order first by thymic status (primary, vs. non-primary) and then by decreasing total contribution by patient
+plot_data <- plot_data[with(plot_data, order(as.character(med_status), -total_contribution)), ]
+
+# specify order of patients (based on our sorting)
+plot_data$tumor_id <- factor(plot_data$tumor_id)
+tumors.ordered <- unique(plot_data$tumor_id)
+
+# order signature groups by recurrence (proportion)
+# first create column containing average contribution of signature
+mean_contributions <- as.data.frame.table(plot_data %>% dplyr::group_by(signature_group) %>% dplyr::summarise(mean(relative_contribution)))
+mean_contributions$Var1 <- NULL
+mean_contributions$Var2 <- NULL
+mean_contributions <- unique(mean_contributions)
+colnames(mean_contributions) <- c("signature_group", "mean_contribution")
+mean_contributions <- mean_contributions[rev(order(mean_contributions$mean_contribution)),]
+# merge with full dataframe
+plot_data <- merge(plot_data, mean_contributions, by = "signature_group")
+# now specify order of signature groups based on mean contribution
+sig_groups.order <- (mean_contributions[rev(order(mean_contributions$mean_contribution)),])$signature_group
+
+# specify order of signature groups: 
+#sig_groups.order <- c("Aging (1)",
+#                      "Defective DNA mismatch repair (3, 6, 15, 20, 26)",
+#                      "POLE activity (10)",
+#                      "Somatic hypermutation (2, 9, 13)",
+#                      "Other signatures with known aetiology (4, 7, 11, 22, 24, 29)",
+#                      "Signatures with unknown aetiology")
+
+# barplot (using absolute numbers of mutations)
+p.absolute.med <- ggplot(data = plot_data, 
+             aes(factor(x = tumor_id, levels = tumors.ordered), 
+                     y = as.numeric(contribution), 
+                     fill = factor(signature_group, levels = sig_groups.order), 
+                     color = med_status)) + 
+  geom_bar(stat = "identity", width = 0.7, size = 0.8) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  scale_colour_manual(name = "Mediastinal status", 
+                      values = c("Not primary"="black", "Primary"="darkorange1")) +
+  scale_fill_manual(name = "Signature group",
+                    values = c("Aging (1)" = "rosybrown1",
+                               "Defective DNA mismatch repair (3, 6, 15, 20, 26)" = "mediumpurple1",
+                               "POLE activity (10)" = "lightgreen", 
+                               "Somatic hypermutation (2, 9, 13)" = "dodgerblue", 
+                               "Other signatures with known aetiology (4, 7, 11, 22, 24, 29)" = "gray",
+                               "Signatures with unknown aetiology" = "gray48")) +
+  xlab("") + 
+  ylab("Number of mutations")
+
+p.absolute.med
+
+# order patients by mediastinal status, then by signature contribution starting with most recurrent group
+plot_data <- plot_data[order(plot_data$med_status, 
+                             -plot_data$mean_contribution, 
+                             plot_data$relative_contribution),]
+plot_data$tumor_id <- factor(plot_data$tumor_id)
+tumors.ordered <- unique(plot_data$tumor_id)
+
+# relative plot
+p.relative.med <- ggplot(data = plot_data, 
+             aes(factor(x = tumor_id, levels = tumors.ordered), 
+                     y = as.numeric(relative_contribution), 
+                     fill = factor(signature_group, levels = sig_groups.order), 
+                     color = med_status)) + 
+  geom_bar(stat = "identity", width = 0.7, size = 0.8) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5)) +
+  scale_colour_manual(name = "Mediastinal status", 
+                      values = c("Not primary"="black", "Primary"="darkorange1")) +
+  scale_fill_manual(name = "Signature group",
+                    values = c("Aging (1)" = "rosybrown1",
+                               "Defective DNA mismatch repair (3, 6, 15, 20, 26)" = "mediumpurple1",
+                               "POLE activity (10)" = "lightgreen", 
+                               "Somatic hypermutation (2, 9, 13)" = "dodgerblue", 
+                               "Other signatures with known aetiology (4, 7, 11, 22, 24, 29)" = "gray",
+                               "Signatures with unknown aetiology" = "gray48")) +
+  xlab("") + 
+  ylab("Number of mutations") +
+  coord_flip()
+
+p.relative.med
+
+
+```
+
 
 ## Association tests (e.g. Are SHM signature mutations differentially distributed by pathology group?)
 
@@ -861,16 +1011,6 @@ library(rstatix)
 
 plot_data <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/chisq_tests/proportions_from_contigency-ALL_clinical_groups-vs-signatures.v3.txt", sep = "\t", header = TRUE)
 
-# read in p-values from chi-square tests
-pvalues <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/clinical_groups-chi_square-pvalues.v3.txt", sep = "\t", header = TRUE)
-
-# convert p-values from wide to long
-#pvalues.long <- gather(pvalues, feature_name, p.signif, EBV.status:Age)
-#pvalues.long$feature_name <- plyr::revalue(pvalues.long$feature_name, 
-#                            c("EBV.status" = "EBV status", 
-#                            "Mediastinal.involvement" = "Mediastinal involvement"))
-#write.table(pvalues.long, "/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/analysis/patient_level-excl_GZ310/clinical_groups-chi_square-pvalues.long.txt", sep = "\t", quote = FALSE, row.names = FALSE)
-
 plot_data$signature_group <- plyr::revalue(plot_data$signature_group, 
                             c("Aging (1)" = "Aging", 
                             "Defective DNA mismatch repair (3, 6, 15, 20, 26)" = "DDMR",
@@ -901,7 +1041,9 @@ p <- ggplot(data=plot_data, aes(x = factor(signature_group, levels = signature_g
   scale_fill_brewer(palette = "Paired", name = "")
 
 p + facet_grid(. ~ feature_name,  scales="fixed")
+```
 
+```{r}
 # individual plots - one plot for Age, one for EBV status, one for mediastinal involvement, and one for pathology
 plot_data.age <- filter(plot_data, plot_data$feature_name == "Age")
 plot_data.ebv <- filter(plot_data, plot_data$feature_name == "EBV status")
@@ -932,7 +1074,7 @@ p.ebv <- ggplot(data=plot_data.ebv, aes(x = factor(signature_group, levels = sig
   theme(legend.position="bottom") +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5),
         plot.margin = unit(c(1,1,1,1), "cm")) +
-  scale_fill_manual(values = c("#b2df8a", "#33a02c"), name = "")
+  scale_fill_manual(values = c("black", "red"), name = "")
 
 # Mediastinal involvment
 p.med <- ggplot(data=plot_data.med, aes(x = factor(signature_group, levels = signature_groups.order), 
@@ -945,7 +1087,7 @@ p.med <- ggplot(data=plot_data.med, aes(x = factor(signature_group, levels = sig
   theme(legend.position="bottom") +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5),
         plot.margin = unit(c(1,1,1,1), "cm")) +
-  scale_fill_manual(values = c("#fdbf6f", "#ff7f00"), name = "")
+  scale_fill_manual(values = c("black", "#ff7f00"), name = "") ##fdbf6f
 
 # Pathology
 p.path <- ggplot(data=plot_data.path, aes(x = factor(signature_group, levels = signature_groups.order), 
@@ -960,6 +1102,10 @@ p.path <- ggplot(data=plot_data.path, aes(x = factor(signature_group, levels = s
         plot.margin = unit(c(1,1,1,1), "cm")) +
   scale_fill_manual(values = c("#fb9a99", "#e31a1c"), name = "")
 
+p.age
+p.ebv
+p.med
+p.path
 ```
 
 
