@@ -10,6 +10,117 @@ This script summarizes the mutational landscape of GZL exomes:
 * Total mutations (incl. 5' and 3' UTRs, and synonymous) + proportions (pie / bar chart?)
 * Breakdown of somatic protein-altering mutations (i.e. remove synonymous mutations)
 * Average / median numbers of mutations (after excl. UTR and synonymous mutations) - with range
+* Tumor Mutation Burden / Somatic mutation frequency per Mb compared to other cancers (from Lawrence et al.)
+
+## Tumor Mutation Burden
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+############################################
+# read in mutation data for comparison cancers
+############################################
+calls.other_cancers <- read.table("/Volumes/shung/projects/gzl_exomes/helper_articles/Lawrence-mutational_heterogeneity-2013/SuppTable2.txt", sep = "\t", fill = TRUE, header = TRUE)
+
+# calculate Mb rate (current rates are in bp) 
+calls.other_cancers$bp_exome <- calls.other_cancers$n_coding_mutations / calls.other_cancers$coding_mutation_rate
+calls.other_cancers$mbp_exome <- calls.other_cancers$bp_exome / 1000000
+calls.other_cancers$coding_mutation_rate_mbp <- calls.other_cancers$n_coding_mutations / calls.other_cancers$mbp_exome
+
+# ensure there are no NaN values (created by dividing my cases that have 0 mutations)
+calls.other_cancers[calls.other_cancers == "NaN"] <- 0
+
+# keep only fields of interest
+keeps <- c("tumor_type", "name", "datatype", "n_coding_mutations", "mbp_exome", "coding_mutation_rate_mbp")
+calls.other_cancers <- calls.other_cancers[, keeps]
+
+#######################
+# read in PMBCL dataset
+#######################
+calls.pmbcl <- read.table("/Volumes/shung/projects/PMBCL_exomes/snv_indel_analysis/paired/calls.integration/snv_indels-integration-protein_altering_OR_synonymous_OR_UTRs.txt", sep = "\t", header = TRUE, fill = TRUE)
+
+# only keep somatic SNVs/indels
+keeps <- c("NON_SYNONYMOUS_CODING", "NON_SYNONYMOUS_START", "START_LOST", "STOP_GAINED", "STOP_LOST", "FRAME_SHIFT")
+calls.pmbcl <- filter(calls.pmbcl, calls.pmbcl$effect %in% keeps)
+calls.pmbcl$effect <- factor(calls.pmbcl$effect)
+
+PMBCL_EXOME_MBP = 30
+
+# calculate coding_mutation_rate for each PMBCL exome case
+pmbcl.mutations_per_case <- as.data.frame.table(table(calls.pmbcl$tumor_id))
+colnames(pmbcl.mutations_per_case) <- c("name", "n_coding_mutations")
+pmbcl.mutations_per_case$coding_mutation_rate_mbp <- pmbcl.mutations_per_case$n_coding_mutations / PMBCL_EXOME_MBP
+
+# add other columns to assist with plotting
+pmbcl.mutations_per_case$tumor_type <- "Primary mediastinal B-cell lymphoma"
+pmbcl.mutations_per_case$datatype <- "exome"
+pmbcl.mutations_per_case$mbp_exome <- PMBCL_EXOME_MBP
+
+# reorder columns to match other datasets
+keeps <- colnames(calls.other_cancers)
+pmbcl.mutations_per_case <- pmbcl.mutations_per_case[, keeps]
+
+######################
+# read in GZL dataset
+######################
+calls.all <- read.table("/Volumes/shung/projects/gzl_exomes/snv_analysis-20181127/signature_analysis/input/snvs_indels.full_cohort_minus_GZ229.default_and_optimized.incl_silent_and_UTR.for_vcf_conversion.short.maf", sep = "\t", header = TRUE, fill = TRUE)
+
+# only keep somatic SNVs/indels
+keeps <- c("Missense_Mutation", "Nonsense_Mutation", "Frame_Shift_Del", "Frame_Shift_Ins", "Nonstop_Mutation")
+calls.all <- filter(calls.all, calls.all$Variant_Classification %in% keeps)
+calls.all$Variant_Classification <- factor(calls.all$Variant_Classification)
+
+#GZL_EXOME_MBP = 90.697072
+GZL_EXOME_MBP = 30
+
+# calculate coding_mutation_rate for each GZL exome case
+gzl.mutations_per_case <- as.data.frame.table(table(calls.all$Tumor_Sample_Barcode))
+colnames(gzl.mutations_per_case) <- c("name", "n_coding_mutations")
+gzl.mutations_per_case$coding_mutation_rate_mbp <- gzl.mutations_per_case$n_coding_mutations / GZL_EXOME_MBP
+
+# add other columns to assist with plotting
+gzl.mutations_per_case$tumor_type <- "Gray zone lymphoma"
+gzl.mutations_per_case$datatype <- "exome"
+gzl.mutations_per_case$mbp_exome <- GZL_EXOME_MBP
+
+# reoder columns to match other dataset
+keeps <- colnames(calls.other_cancers)
+gzl.mutations_per_case <- gzl.mutations_per_case[, keeps]
+
+##################
+# Combine datasets
+##################
+# set colours of each dataset
+calls.other_cancers$color <- "white"
+pmbcl.mutations_per_case$color <- "white"
+gzl.mutations_per_case$color <- "gray"
+all.mutations_per_case <- rbind(calls.other_cancers, pmbcl.mutations_per_case,  gzl.mutations_per_case)
+
+# create column containing mean / median value for each tumor_type
+median_rates <- as.data.frame.table(all.mutations_per_case %>% dplyr::group_by(tumor_type) %>% dplyr::summarise(median(coding_mutation_rate_mbp)))
+median_rates$Var1 <- NULL
+median_rates$Var2 <- NULL
+colnames(median_rates) <- c("tumor_type", "median.coding_mutation_rate_mbp")
+
+# merge with full dataset
+all.mutations_per_case <- merge(all.mutations_per_case, median_rates, by = "tumor_type")
+
+# plot while sorting cancers by median somatic mutation frequency
+theme_set(theme_bw())
+
+g <- ggplot(all.mutations_per_case, aes(x = reorder(tumor_type, as.numeric(coding_mutation_rate_mbp), FUN=median),
+                                        y = coding_mutation_rate_mbp, fill=color))
+
+p <- g + geom_violin() +
+  labs(title = "", subtitle = "", caption = "", x = "", y = "Somatic mutation frequency (/Mb)") +
+  scale_y_continuous(trans='log10') +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+  stat_summary(fun.y=median, geom="point", size=2, color="red") +
+  scale_fill_manual(values = c("gray", "white")) +
+  theme(legend.position = "none") 
+
+```
 
 ## Summary statistics for paired samples
 
